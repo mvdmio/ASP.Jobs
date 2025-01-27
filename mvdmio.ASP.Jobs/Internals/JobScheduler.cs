@@ -22,46 +22,81 @@ internal class JobScheduler : IJobScheduler
    public async Task PerformNowAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default)
       where TJob : IJob<TParameters>
    {
-      var scope = _services.CreateScope();
-      var job = scope.ServiceProvider.GetRequiredService<TJob>();
-      
-      await job.OnJobScheduledAsync(parameters, cancellationToken);
-      await job.ExecuteAsync(parameters, cancellationToken);
+      try
+      {
+         var job = GetJobFromDi<TJob, TParameters>();
+
+         await job.OnJobScheduledAsync(parameters, cancellationToken);
+         await job.ExecuteAsync(parameters, cancellationToken);
+      }
+      catch (Exception e)
+      {
+         Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         throw;
+      }
    }
 
    public async Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default)
       where TJob : IJob<TParameters>
    {
-      var scope = _services.CreateScope();
-      var job = scope.ServiceProvider.GetRequiredService<TJob>();
-      
-      await job.OnJobScheduledAsync(parameters, cancellationToken);
-      await _jobStorage.AddJobAsync<TJob, TParameters>(parameters, DateTime.UtcNow, cancellationToken);
-      
-      Log.Information("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+      try
+      {
+         var job = GetJobFromDi<TJob, TParameters>();
+
+         await job.OnJobScheduledAsync(parameters, cancellationToken);
+         await _jobStorage.AddJobAsync<TJob, TParameters>(parameters, DateTime.UtcNow, cancellationToken);
+
+         Log.Information("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+      }
+      catch (Exception e)
+      {
+         Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         throw;
+      }
    }
 
    public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken cancellationToken = default)
       where TJob : IJob<TParameters>
    {
-      var scope = _services.CreateScope();
-      var job = scope.ServiceProvider.GetRequiredService<TJob>();
-      
-      await job.OnJobScheduledAsync(parameters, cancellationToken);
-      await _jobStorage.AddJobAsync<TJob, TParameters>(parameters, performAtUtc, cancellationToken);
-      
-      Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, parameters, performAtUtc);
+      try
+      {
+         var job = GetJobFromDi<TJob, TParameters>();
+
+         await job.OnJobScheduledAsync(parameters, cancellationToken);
+         await _jobStorage.AddJobAsync<TJob, TParameters>(parameters, performAtUtc, cancellationToken);
+
+         Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, parameters, performAtUtc);
+      }
+      catch (Exception e)
+      {
+         Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         throw;
+      }
    }
 
    public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default)
       where TJob : IJob<TParameters>
    {
+      try
+      {
+         var job = GetJobFromDi<TJob, TParameters>();
+
+         await job.OnJobScheduledAsync(parameters, cancellationToken);
+         await _jobStorage.AddCronJobAsync<TJob, TParameters>(parameters, cronExpression, runImmediately, cancellationToken);
+
+         Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, parameters, cronExpression.ToString());
+      }
+      catch (Exception e)
+      {
+         Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         throw;
+      }
+   }
+
+   private TJob GetJobFromDi<TJob, TParameters>() where TJob : IJob<TParameters>
+   {
       var scope = _services.CreateScope();
       var job = scope.ServiceProvider.GetRequiredService<TJob>();
-
-      await job.OnJobScheduledAsync(parameters, cancellationToken);
-      await _jobStorage.AddCronJobAsync<TJob, TParameters>(parameters, cronExpression, runImmediately, cancellationToken);
-
-      Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, parameters, cronExpression.ToString());
+      return job;
    }
 }
