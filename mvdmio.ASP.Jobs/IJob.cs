@@ -5,6 +5,9 @@ using JetBrains.Annotations;
 
 namespace mvdmio.ASP.Jobs;
 
+/// <summary>
+/// Interface for a job.
+/// </summary>
 public interface IJob
 {
    /// <summary>
@@ -32,6 +35,9 @@ public interface IJob
    Task OnJobFailedAsync(object parameters, Exception exception, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Interface for a job.
+/// </summary>
 [PublicAPI]
 public interface IJob<in TProperties> : IJob
 {

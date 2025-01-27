@@ -5,6 +5,9 @@ using JetBrains.Annotations;
 
 namespace mvdmio.ASP.Jobs;
 
+/// <summary>
+/// Interface for a job scheduler.
+/// </summary>
 [PublicAPI]
 public interface IJobScheduler
 {

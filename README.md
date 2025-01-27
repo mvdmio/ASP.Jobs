@@ -11,16 +11,23 @@ dotnet add package mvdmio.ASP.Jobs
 ```csharp
 public void ConfigureServices(IServiceCollection services)
 {
-    services.AddJobScheduler();
-    services.AddJobRunner();
+   services.AddJobs();
+   -- OR --
+   services.AddJobScheduler();
+   services.AddJobRunner();
 }
 ```
 
 3. Create a job by implementing the `IJob` interface:
 ```csharp
-public class MyJob : IJob
+public class MyJobParameters
 {
-    public async Task ExecuteAsync(CancellationToken cancellationToken)
+   public string Parameter { get; set; }
+}
+
+public class MyJob : IJob<MyJobParameters>
+{
+    public async Task ExecuteAsync(MyJobParameters parameters, CancellationToken cancellationToken)
     {
         // Your job logic here
     }
@@ -31,7 +38,7 @@ public class MyJob : IJob
 ```csharp
 public void ConfigureServices(IServiceCollection services)
 {
-    services.AddSingleton<MyJob>();
+   services.AddJob<MyJob, MyJobParameters>();
 }
 ```
 
