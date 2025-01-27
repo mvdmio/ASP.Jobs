@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Cronos;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
+using Serilog;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage;
 
@@ -16,28 +17,44 @@ internal class InMemoryJobStorage : IJobStorage
    public async Task AddJobAsync<TJob, TParameters>(TParameters parameters, DateTime performAtUtc, CancellationToken ct = default)
       where TJob : IJob<TParameters>
    {
-      await AddJobAsync(
-         new JobStoreItem {
-            JobType = typeof(TJob),
-            Parameters = parameters!
-         },
-         performAtUtc,
-         ct
-      );
+      try
+      {
+         await AddJobAsync(
+            new JobStoreItem {
+               JobType = typeof(TJob),
+               Parameters = parameters!
+            },
+            performAtUtc,
+            ct
+         );
+      }
+      catch (Exception e)
+      {
+         Log.Error(e, "Error while adding job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         throw;
+      }
    }
 
    public async Task AddCronJobAsync<TJob, TParameters>(TParameters parameters, CronExpression cronExpression, bool runImmediately = false, CancellationToken ct = default) where TJob : IJob<TParameters>
    {
-      var jobItem = new JobStoreItem {
-         JobType = typeof(TJob),
-         Parameters = parameters!,
-         CronExpression = cronExpression
-      };
+      try
+      {
+         var jobItem = new JobStoreItem {
+            JobType = typeof(TJob),
+            Parameters = parameters!,
+            CronExpression = cronExpression
+         };
 
-      if(runImmediately)
-         await AddJobAsync(jobItem, DateTime.UtcNow, ct);
-      else
-         await ScheduleNextOccurrence(jobItem, ct);
+         if(runImmediately)
+            await AddJobAsync(jobItem, DateTime.UtcNow, ct);
+         else
+            await ScheduleNextOccurrence(jobItem, ct);
+      }
+      catch(Exception e)
+      {
+         Log.Error(e, "Error while adding CRON job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         throw;
+      }
    }
 
    public async Task<JobStoreItem?> GetNextJobAsync(CancellationToken ct = default)
@@ -54,13 +71,18 @@ internal class InMemoryJobStorage : IJobStorage
 
          if (_jobQueue.TryDequeue(out var job, out _))
          {
-            if(job.CronExpression is not null)
+            if (job.CronExpression is not null)
                await ScheduleNextOccurrence(job, ct);
 
             return job;
          }
-         
+
          return null;
+      }
+      catch (Exception e)
+      {
+         Log.Error(e, "Error while retrieving next job from queue");
+         throw;
       }
       finally
       {

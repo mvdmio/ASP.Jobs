@@ -50,19 +50,19 @@ internal class JobRunnerService : BackgroundService
       {
          while (!cancellationToken.IsCancellationRequested)
          {
-            var jobBusItem = await _jobStorage.GetNextJobAsync(cancellationToken);
-
-            if (jobBusItem is null)
-            {
-               await Task.Delay(1, cancellationToken);
-               continue;
-            }
-
-            var startTime = Stopwatch.GetTimestamp();
-            Log.Information("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
-
             try
             {
+               var jobBusItem = await _jobStorage.GetNextJobAsync(cancellationToken);
+
+               if (jobBusItem is null)
+               {
+                  await Task.Delay(1, cancellationToken);
+                  continue;
+               }
+
+               var startTime = Stopwatch.GetTimestamp();
+               Log.Information("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+
                using var scope = _services.CreateScope();
                var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
 
@@ -81,7 +81,7 @@ internal class JobRunnerService : BackgroundService
             }
             catch (Exception e)
             {
-               Log.Error(e, "Error while creating job instance {JobType}", jobBusItem.JobType.Name);
+               Log.Error(e, "Error while performing available jobs.");
             }
          }
       }
