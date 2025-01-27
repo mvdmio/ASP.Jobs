@@ -41,19 +41,19 @@ internal class JobScheduler : IJobScheduler
       Log.Information("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
    }
 
-   public async Task PerformAtAsync<TJob, TParameters>(TParameters parameters, DateTime performAt, CancellationToken cancellationToken = default)
+   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken cancellationToken = default)
       where TJob : IJob<TParameters>
    {
       var scope = _services.CreateScope();
       var job = scope.ServiceProvider.GetRequiredService<TJob>();
       
       await job.OnJobScheduledAsync(parameters, cancellationToken);
-      await _jobStorage.AddJobAsync<TJob, TParameters>(parameters, performAt, cancellationToken);
+      await _jobStorage.AddJobAsync<TJob, TParameters>(parameters, performAtUtc, cancellationToken);
       
-      Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, parameters, performAt);
+      Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, parameters, performAtUtc);
    }
 
-   public async Task PerformCronAsync<TJob, TParameters>(TParameters parameters, CronExpression cronExpression, bool runImmediately = false, CancellationToken cancellationToken = default)
+   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default)
       where TJob : IJob<TParameters>
    {
       var scope = _services.CreateScope();

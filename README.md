@@ -55,9 +55,9 @@ public void MyController : Controller
 
    public async Task<IActionResult> ScheduleJob()
    {
-      await _jobScheduler.PerformNowAsync<MyJob>();  // Runs the job immediately and waits for completion.
-      await _jobScheduler.PerformAsapAsync<MyJob>(); // Runs the job on a separate thread as soon as a slot becomes available.
-      await _jobScheduler.PerformNowAsync<MyJob>();  // Runs the job on a separate thread at the given time.
+      await _jobScheduler.PerformNowAsync<MyJob>(new MyJobParameters());  // Runs the job immediately and waits for completion.
+      await _jobScheduler.PerformAsapAsync<MyJob>(new MyJobParameters()); // Runs the job on a separate thread as soon as a slot becomes available.
+      await _jobScheduler.PerformAtAsync<MyJob>(DateTime.Now, new MyJobParameters());  // Runs the job on a separate thread at the given time.
 
       return Ok();
    }
@@ -72,15 +72,12 @@ This library uses the [Cronos](https://github.com/HangfireIO/Cronos) nuget packa
 To schedule a job to run repeatedly, use the `PerformCronAsync` method on the `IJobScheduler` interface. Usually this is done during application startup.
 
 ```csharp
-public void ConfigureServices(IServiceCollection services)
-{
-   var jobScheduler = services.GetRequiredService<IJobScheduler>();
-   jobScheduler.PerformCronAsync<MyJob>("* * * * * *"); // Run every second
-   jobScheduler.PerformCronAsync<MyJob>("* * * * *");   // Run every minute
-   jobScheduler.PerformCronAsync<MyJob>("*/5 * * * *"); // Run every 5 minutes
-   jobScheduler.PerformCronAsync<MyJob>("0 * * * *");   // Run once an hour at the beginning of the hour
-   jobScheduler.PerformCronAsync<MyJob>("0 0 * * *");   // Run once a day at midnight
-   jobScheduler.PerformCronAsync<MyJob>("0 0 * * 0");   // Run once a week at midnight on Sunday morning
-   jobScheduler.PerformCronAsync<MyJob>("0 0 1 * *");   // Run once a month at midnight of the first day of the month
-}
+var jobScheduler = application.Services.GetRequiredService<IJobScheduler>();
+jobScheduler.PerformCronAsync<MyJob>("* * * * * *", new MyJobParameters()); // Run every second
+jobScheduler.PerformCronAsync<MyJob>("* * * * *", new MyJobParameters());   // Run every minute
+jobScheduler.PerformCronAsync<MyJob>("*/5 * * * *", new MyJobParameters()); // Run every 5 minutes
+jobScheduler.PerformCronAsync<MyJob>("0 * * * *", new MyJobParameters());   // Run once an hour at the beginning of the hour
+jobScheduler.PerformCronAsync<MyJob>("0 0 * * *", new MyJobParameters());   // Run once a day at midnight
+jobScheduler.PerformCronAsync<MyJob>("0 0 * * 0", new MyJobParameters());   // Run once a week at midnight on Sunday morning
+jobScheduler.PerformCronAsync<MyJob>("0 0 1 * *", new MyJobParameters());   // Run once a month at midnight of the first day of the month
 ```
