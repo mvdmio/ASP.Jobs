@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-using mvdmio.ASP.Jobs.Internals.JobBus;
+using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using Serilog;
 
 namespace mvdmio.ASP.Jobs.Internals;
@@ -14,16 +14,16 @@ namespace mvdmio.ASP.Jobs.Internals;
 internal class JobRunnerService : BackgroundService
 {
    private readonly IServiceProvider _services;
-   private readonly IJobBus _jobBus;
+   private readonly IJobStorage _jobStorage;
    private readonly IOptions<JobConfiguration> _options;
    private readonly SemaphoreSlim _jobRunnerLock;
    
    private JobConfiguration Configuration => _options.Value;
    
-   public JobRunnerService(IServiceProvider services, IJobBus jobBus, IOptions<JobConfiguration> options)
+   public JobRunnerService(IServiceProvider services, IJobStorage jobStorage, IOptions<JobConfiguration> options)
    {
       _services = services;
-      _jobBus = jobBus;
+      _jobStorage = jobStorage;
       _options = options;
       _jobRunnerLock = new SemaphoreSlim(Configuration.MaxConcurrentJobs, Configuration.MaxConcurrentJobs);
    }
@@ -50,7 +50,7 @@ internal class JobRunnerService : BackgroundService
       {
          while (!cancellationToken.IsCancellationRequested)
          {
-            var jobBusItem = await _jobBus.GetNextJobAsync(cancellationToken);
+            var jobBusItem = await _jobStorage.GetNextJobAsync(cancellationToken);
 
             if (jobBusItem is null)
             {

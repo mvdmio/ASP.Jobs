@@ -63,3 +63,24 @@ public void MyController : Controller
    }
 }
 ```
+
+## Scheduled jobs (CRON)
+You can schedule any job to run repeatedly using CRON expressions.
+
+This library uses the [Cronos](https://github.com/HangfireIO/Cronos) nuget package to parse CRON expressions.
+
+To schedule a job to run repeatedly, use the `PerformCronAsync` method on the `IJobScheduler` interface. Usually this is done during application startup.
+
+```csharp
+public void ConfigureServices(IServiceCollection services)
+{
+   var jobScheduler = services.GetRequiredService<IJobScheduler>();
+   jobScheduler.PerformCronAsync<MyJob>("* * * * * *"); // Run every second
+   jobScheduler.PerformCronAsync<MyJob>("* * * * *");   // Run every minute
+   jobScheduler.PerformCronAsync<MyJob>("*/5 * * * *"); // Run every 5 minutes
+   jobScheduler.PerformCronAsync<MyJob>("0 * * * *");   // Run once an hour at the beginning of the hour
+   jobScheduler.PerformCronAsync<MyJob>("0 0 * * *");   // Run once a day at midnight
+   jobScheduler.PerformCronAsync<MyJob>("0 0 * * 0");   // Run once a week at midnight on Sunday morning
+   jobScheduler.PerformCronAsync<MyJob>("0 0 1 * *");   // Run once a month at midnight of the first day of the month
+}
+```

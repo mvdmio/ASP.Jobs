@@ -2,7 +2,8 @@
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using mvdmio.ASP.Jobs.Internals;
-using mvdmio.ASP.Jobs.Internals.JobBus;
+using mvdmio.ASP.Jobs.Internals.Storage;
+using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 
 namespace mvdmio.ASP.Jobs;
 
@@ -30,8 +31,8 @@ public static class DependencyInjectionExtensions
       services.AddSingleton<IJobScheduler, JobScheduler>();
       
       // Hardcoded to in-memory job bus for now
-      if(services.All(x => x.ImplementationType != typeof(InMemoryJobBus)))
-         services.AddSingleton<IJobBus, InMemoryJobBus>();
+      if(services.All(x => x.ImplementationType != typeof(InMemoryJobStorage)))
+         services.AddSingleton<IJobStorage, InMemoryJobStorage>();
    }
 
    /// <summary>
@@ -42,8 +43,8 @@ public static class DependencyInjectionExtensions
       services.AddHostedService<JobRunnerService>();
       
       // Hardcoded to in-memory job bus for now
-      if(services.All(x => x.ImplementationType != typeof(InMemoryJobBus)))
-         services.AddSingleton<IJobBus, InMemoryJobBus>();
+      if(services.All(x => x.ImplementationType != typeof(InMemoryJobStorage)))
+         services.AddSingleton<IJobStorage, InMemoryJobStorage>();
    }
 
    /// <summary>
