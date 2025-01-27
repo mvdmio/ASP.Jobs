@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+   <PropertyGroup>
+      <Version>1.0.0</Version>
+      <Title>mvdmio.ASP.Jobs</Title>
+      <Description>Job scheduling library for use in ASP.NET projects.</Description>
+      <Company>mvdmio</Company>
+      <Authors>Michiel van der Meer</Authors>
+      <PackageReadmeFile>Readme.md</PackageReadmeFile>
+      <PackageLicenseFile>License.txt</PackageLicenseFile>
+   </PropertyGroup>
+
+   <ItemGroup>
+     <PackageReference Include="JetBrains.Annotations" Version="2024.3.0" />
+     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.1" />
+     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.1" />
+     <PackageReference Include="Serilog" Version="4.2.0" />
+  </ItemGroup>
+
+</Project>

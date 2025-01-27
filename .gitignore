@@ -1,0 +1,15 @@
+**/.git
+**/.vs
+**/.idea
+**/packages
+**/bin
+**/obj
+**/TestResults
+
+**/*.user
+
+**/*.pubxml
+**/profile.arm.json
+
+**/*.dbmdl
+**/*.jfm

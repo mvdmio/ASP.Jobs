@@ -1,0 +1,33 @@
+name: Publish NuGet packages
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04 #ubuntu-latest doesnt work at the moment, see: https://github.com/NuGet/setup-nuget/issues/168
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup NuGet.exe for use with actions
+        uses: nuget/setup-nuget@v2
+        with:
+          nuget-api-key: ${{secrets.NUGET_API_KEY}}
+          nuget-version: 'latest'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9
+
+      - name: Restore dependencies
+        run: dotnet restore mvdmio.ASP.Jobs
+
+      - name: Build
+        run: dotnet build mvdmio.ASP.Jobs --no-restore
+
+      - name: Push package
+        run: nuget push **\*.nupkg -Source 'https://api.nuget.org/v3/index.json' -NonInteractive -SkipDuplicate -Verbosity normal
