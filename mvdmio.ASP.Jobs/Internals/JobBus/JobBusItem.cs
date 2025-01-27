@@ -1,4 +1,6 @@
-﻿namespace mvdmio.ASP.Jobs.Internals.JobBus;
+﻿using System;
+
+namespace mvdmio.ASP.Jobs.Internals.JobBus;
 
 internal class JobBusItem
 {

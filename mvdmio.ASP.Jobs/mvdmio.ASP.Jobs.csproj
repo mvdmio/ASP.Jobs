@@ -21,6 +21,11 @@
    </PropertyGroup>
 
    <ItemGroup>
+      <None Include="..\License.txt" PackagePath="" Pack="true"/>
+      <None Include="..\Readme.md" PackagePath="" Pack="true"/>
+   </ItemGroup>
+
+   <ItemGroup>
      <PackageReference Include="JetBrains.Annotations" Version="2024.3.0" />
      <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.1" />
      <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.1" />
