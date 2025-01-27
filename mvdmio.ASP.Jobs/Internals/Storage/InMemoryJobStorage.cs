@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Cronos;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using Serilog;
@@ -14,46 +13,17 @@ internal class InMemoryJobStorage : IJobStorage
    private readonly PriorityQueue<JobStoreItem, DateTime> _jobQueue = new();
    private readonly SemaphoreSlim _jobQueueLock = new(1, 1);
    
-   public async Task AddJobAsync<TJob, TParameters>(TParameters parameters, DateTime performAtUtc, CancellationToken ct = default)
-      where TJob : IJob<TParameters>
+   public async Task QueueJobAsync(JobStoreItem item, DateTime performAtUtc, CancellationToken ct = default)
    {
+      await _jobQueueLock.WaitAsync(ct);
+
       try
       {
-         await AddJobAsync(
-            new JobStoreItem {
-               JobType = typeof(TJob),
-               Parameters = parameters!
-            },
-            performAtUtc,
-            ct
-         );
+         _jobQueue.Enqueue(item, performAtUtc);
       }
-      catch (Exception e)
+      finally
       {
-         Log.Error(e, "Error while adding job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
-         throw;
-      }
-   }
-
-   public async Task AddCronJobAsync<TJob, TParameters>(TParameters parameters, CronExpression cronExpression, bool runImmediately = false, CancellationToken ct = default) where TJob : IJob<TParameters>
-   {
-      try
-      {
-         var jobItem = new JobStoreItem {
-            JobType = typeof(TJob),
-            Parameters = parameters!,
-            CronExpression = cronExpression
-         };
-
-         if(runImmediately)
-            await AddJobAsync(jobItem, DateTime.UtcNow, ct);
-         else
-            await ScheduleNextOccurrence(jobItem, ct);
-      }
-      catch(Exception e)
-      {
-         Log.Error(e, "Error while adding CRON job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
-         throw;
+         _jobQueueLock.Release();
       }
    }
 
@@ -71,9 +41,6 @@ internal class InMemoryJobStorage : IJobStorage
 
          if (_jobQueue.TryDequeue(out var job, out _))
          {
-            if (job.CronExpression is not null)
-               await ScheduleNextOccurrence(job, ct);
-
             return job;
          }
 
@@ -90,29 +57,5 @@ internal class InMemoryJobStorage : IJobStorage
       }
    }
 
-   private async Task AddJobAsync(JobStoreItem item, DateTime performAtUtc, CancellationToken ct = default)
-   {
-      await _jobQueueLock.WaitAsync(ct);
-
-      try
-      {
-         _jobQueue.Enqueue(item, performAtUtc);
-      }
-      finally
-      {
-         _jobQueueLock.Release();
-      }
-   }
-
-   private async Task ScheduleNextOccurrence(JobStoreItem jobItem, CancellationToken ct = default)
-   {
-      if (jobItem.CronExpression is null)
-         return;
-
-      var nextOccurrence = jobItem.CronExpression.GetNextOccurrence(DateTime.UtcNow);
-      if(nextOccurrence is null)
-         throw new InvalidOperationException("CRON expression does not have a next occurrence.");
-
-      await AddJobAsync(jobItem, nextOccurrence.Value, ct);
-   }
+   
 }
