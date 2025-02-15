@@ -55,9 +55,14 @@ internal class JobRunnerService : BackgroundService
             {
                await PerformNextJobAsync(cancellationToken);
             }
+            catch (Exception e) when (e is TaskCanceledException or OperationCanceledException)
+            {
+               // Ignore cancellation exceptions; they are expected when the service is stopped.
+               break;
+            }
             catch (Exception e)
             {
-               Log.Error(e, "Error while performing available jobs.");
+               Log.Error(e, "Error while performing available jobs");
             }
          }
       }
