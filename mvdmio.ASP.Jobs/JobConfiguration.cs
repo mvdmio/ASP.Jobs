@@ -6,7 +6,7 @@
 public class JobConfiguration
 {
    /// <summary>
-   /// The maximum number of jobs that can be executed concurrently. Default is 1.
+   /// The maximum number of jobs that can be executed concurrently. Default is 5.
    /// </summary>
-   public int MaxConcurrentJobs { get; init; } = 1;
+   public int MaxConcurrentJobs { get; init; } = 5;
 }
