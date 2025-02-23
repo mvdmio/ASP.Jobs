@@ -58,7 +58,6 @@ internal class JobRunnerService : BackgroundService
             catch (Exception e) when (e is TaskCanceledException or OperationCanceledException)
             {
                // Ignore cancellation exceptions; they are expected when the service is stopped.
-               break;
             }
             catch (Exception e)
             {
@@ -86,7 +85,7 @@ internal class JobRunnerService : BackgroundService
          using var scope = _services.CreateScope();
          var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
 
-         await PerformJob(cancellationToken, job, jobBusItem);
+         await PerformJob(job, jobBusItem, cancellationToken);
       }
       finally
       {
@@ -95,7 +94,7 @@ internal class JobRunnerService : BackgroundService
       }  
    }
 
-   private static async Task PerformJob(CancellationToken cancellationToken, IJob job, JobStoreItem jobBusItem)
+   private static async Task PerformJob(IJob job, JobStoreItem jobBusItem, CancellationToken cancellationToken)
    {
       var startTime = Stopwatch.GetTimestamp();
 
