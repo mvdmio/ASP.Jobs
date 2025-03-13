@@ -104,7 +104,8 @@ internal class JobScheduler : IJobScheduler
          var job = GetJobFromDi<TJob, TParameters>();
          var jobItem = new JobStoreItem {
             JobType = typeof(TJob),
-            Parameters = parameters
+            Parameters = parameters,
+            CronExpression = cronExpression
          };
 
          await job.OnJobScheduledAsync(parameters, cancellationToken);
