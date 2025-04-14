@@ -53,6 +53,7 @@ public static class DependencyInjectionExtensions
    public static void AddJob<TJob, TParameters>(this IServiceCollection services)
       where TJob : class, IJob<TParameters>
    {
-      services.AddScoped<TJob>();
+      services.AddScoped<TJob>(); // So that you can inject the implementation directly into some classes.
+      services.AddScoped<IJob, TJob>(); // So that you can inject a list if implementations into some classes.
    }
 }
