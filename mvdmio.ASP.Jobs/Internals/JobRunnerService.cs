@@ -89,6 +89,8 @@ internal class JobRunnerService : BackgroundService
       }
       finally
       {
+         await _jobStorage.RemoveJobAsync(jobBusItem.Options.JobId, cancellationToken);
+         
          if(jobBusItem.CronExpression is not null)
             await ScheduleNextOccurrence(jobBusItem, cancellationToken);
       }  
@@ -122,6 +124,13 @@ internal class JobRunnerService : BackgroundService
       if(nextOccurrence is null)
          throw new InvalidOperationException("CRON expression does not have a next occurrence.");
 
-      await _jobStorage.QueueJobAsync(jobItem, nextOccurrence.Value, ct);
+      var newJobItem = new JobStoreItem {
+         JobType = jobItem.JobType,
+         PerformAt = nextOccurrence.Value,
+         Parameters = jobItem.Parameters,
+         Options = jobItem.Options
+      };
+      
+      await _jobStorage.AddJobAsync(newJobItem, ct);
    }
 }

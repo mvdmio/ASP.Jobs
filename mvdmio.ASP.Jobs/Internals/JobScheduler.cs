@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Cronos;
@@ -38,7 +37,7 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default)
+   public async Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
       where TJob : IJob<TParameters>
    {
       ArgumentNullException.ThrowIfNull(parameters);
@@ -48,12 +47,13 @@ internal class JobScheduler : IJobScheduler
          var job = GetJobFromDi<TJob, TParameters>();
          
          await job.OnJobScheduledAsync(parameters, cancellationToken);
-         await _jobStorage.QueueJobAsync(
+         await _jobStorage.AddJobAsync(
             new JobStoreItem {
                JobType = typeof(TJob),
-               Parameters = parameters
+               PerformAt = DateTime.UtcNow,
+               Parameters = parameters,
+               Options = options ?? new JobScheduleOptions()
             },
-            DateTime.UtcNow,
             cancellationToken
          );
 
@@ -66,7 +66,7 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken cancellationToken = default)
+   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
       where TJob : IJob<TParameters>
    {
       ArgumentNullException.ThrowIfNull(parameters);
@@ -76,12 +76,13 @@ internal class JobScheduler : IJobScheduler
          var job = GetJobFromDi<TJob, TParameters>();
          
          await job.OnJobScheduledAsync(parameters, cancellationToken);
-         await _jobStorage.QueueJobAsync(
+         await _jobStorage.AddJobAsync(
             new JobStoreItem {
                JobType = typeof(TJob),
-               Parameters = parameters
+               PerformAt = performAtUtc,
+               Parameters = parameters,
+               Options = options ?? new JobScheduleOptions()
             },
-            performAtUtc,
             cancellationToken
          );
 
@@ -94,25 +95,28 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default)
+   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, JobScheduleOptions? options = null, bool runImmediately = false, CancellationToken cancellationToken = default)
       where TJob : IJob<TParameters>
    {
       ArgumentNullException.ThrowIfNull(parameters);
 
       try
       {
+         
          var job = GetJobFromDi<TJob, TParameters>();
-         var jobItem = new JobStoreItem {
-            JobType = typeof(TJob),
-            Parameters = parameters,
-            CronExpression = cronExpression
-         };
-
          await job.OnJobScheduledAsync(parameters, cancellationToken);
 
          if(runImmediately)
          {
-            await _jobStorage.QueueJobAsync(jobItem, DateTime.UtcNow, cancellationToken);   
+            var jobItem = new JobStoreItem {
+               JobType = typeof(TJob),
+               PerformAt = DateTime.UtcNow,
+               Parameters = parameters,
+               Options = options ?? new JobScheduleOptions(),
+               CronExpression = cronExpression
+            };
+            
+            await _jobStorage.AddJobAsync(jobItem, cancellationToken);   
          }
          else
          {
@@ -120,7 +124,15 @@ internal class JobScheduler : IJobScheduler
             if (nextOccurence is null)
                throw new InvalidOperationException("CRON expression does not have a next occurrence.");
 
-            await _jobStorage.QueueJobAsync(jobItem, nextOccurence.Value, cancellationToken);
+            var jobItem = new JobStoreItem {
+               JobType = typeof(TJob),
+               PerformAt = nextOccurence.Value,
+               Parameters = parameters,
+               Options = options ?? new JobScheduleOptions(),
+               CronExpression = cronExpression
+            };
+            
+            await _jobStorage.AddJobAsync(jobItem, cancellationToken);
          }
          
          Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, parameters, cronExpression.ToString());
