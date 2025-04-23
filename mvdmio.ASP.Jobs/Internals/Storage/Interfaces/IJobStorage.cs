@@ -15,7 +15,7 @@ internal interface IJobStorage
    /// <summary>
    /// Remove the job from storage. Either because it has been executed successfully or because it has failed.
    /// </summary>
-   Task RemoveJobAsync(Guid jobId, CancellationToken ct = default);
+   Task RemoveJobAsync(string jobId, CancellationToken ct = default);
 
    /// <summary>
    /// Retrieve the next job that may be executed and mark it as 'in progress'.

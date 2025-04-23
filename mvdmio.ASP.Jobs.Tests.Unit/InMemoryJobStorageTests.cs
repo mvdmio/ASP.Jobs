@@ -41,7 +41,7 @@ public class InMemoryJobStorageTests
    public async Task AddJob_ShouldNotAddJobWithSameIdTwice()
    {
       // Arrange
-      var jobId = Guid.NewGuid();
+      var jobId = Guid.NewGuid().ToString();
       
       // Act
       _ = await AddNewJobStoreItem(id: jobId);
@@ -56,9 +56,10 @@ public class InMemoryJobStorageTests
    public async Task RemoveJob_ShouldNotDoAnything_WhenEmpty()
    {
       // Arrange
+      var jobId = Guid.NewGuid().ToString();
       
       // Act
-      var remove = async () => await _sut.RemoveJobAsync(Guid.NewGuid(), CancellationToken);
+      var remove = async () => await _sut.RemoveJobAsync(jobId, CancellationToken);
       
       // Assert
       await remove.Should().NotThrowAsync();
@@ -163,14 +164,14 @@ public class InMemoryJobStorageTests
       secondResult.Should().Be(secondInGroup);
    }
    
-   private async Task<JobStoreItem> AddNewJobStoreItem(DateTime? performAt = null, Guid? id = null, string? group = null)
+   private async Task<JobStoreItem> AddNewJobStoreItem(DateTime? performAt = null, string? id = null, string? group = null)
    {
       var jobItem = new JobStoreItem {
          JobType = typeof(TestJob),
          Parameters = null!,
          PerformAt = performAt ?? _clock.UtcNow,
          Options = new JobScheduleOptions {
-            JobId = id ?? Guid.NewGuid(),
+            JobId = id ?? Guid.NewGuid().ToString(),
             Group = group
          }
       };

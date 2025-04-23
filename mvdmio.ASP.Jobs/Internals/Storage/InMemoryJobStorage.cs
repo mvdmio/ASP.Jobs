@@ -18,7 +18,7 @@ internal class InMemoryJobStorage : IJobStorage
    }
    
    private readonly IClock _clock;
-   private readonly IDictionary<Guid, (JobStoreItem item, JobState state)> _jobs = new Dictionary<Guid, (JobStoreItem, JobState)>();
+   private readonly IDictionary<string, (JobStoreItem item, JobState state)> _jobs = new Dictionary<string, (JobStoreItem, JobState)>();
    private readonly SemaphoreSlim _jobQueueLock = new(1, 1);
 
    internal IEnumerable<JobStoreItem> Jobs => _jobs.Values.Select(x => x.item);
@@ -53,7 +53,7 @@ internal class InMemoryJobStorage : IJobStorage
       }
    }
 
-   public async Task RemoveJobAsync(Guid jobId, CancellationToken ct = default)
+   public async Task RemoveJobAsync(string jobId, CancellationToken ct = default)
    {
       await _jobQueueLock.WaitAsync(ct);
 
