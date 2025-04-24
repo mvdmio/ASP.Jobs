@@ -10,6 +10,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		License.txt = License.txt
 		.github\workflows\publish-nuget.yml = .github\workflows\publish-nuget.yml
 		README.md = README.md
+		TODO.md = TODO.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mvdmio.ASP.Jobs.Tests.Unit", "mvdmio.ASP.Jobs.Tests.Unit\mvdmio.ASP.Jobs.Tests.Unit.csproj", "{5D8519A1-5A90-4C03-9B89-AED3D5CB1F69}"

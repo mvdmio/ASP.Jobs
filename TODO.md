@@ -1,0 +1,2 @@
+- Cancel scheduled job
+- [bug] Scheduling a job that is currently running will result in the second job not being run
