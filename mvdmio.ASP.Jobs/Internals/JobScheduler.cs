@@ -47,7 +47,7 @@ internal class JobScheduler : IJobScheduler
          var job = GetJobFromDi<TJob, TParameters>();
          
          await job.OnJobScheduledAsync(parameters, cancellationToken);
-         await _jobStorage.AddJobAsync(
+         await _jobStorage.ScheduleJobAsync(
             new JobStoreItem {
                JobType = typeof(TJob),
                PerformAt = DateTime.UtcNow,
@@ -76,7 +76,7 @@ internal class JobScheduler : IJobScheduler
          var job = GetJobFromDi<TJob, TParameters>();
          
          await job.OnJobScheduledAsync(parameters, cancellationToken);
-         await _jobStorage.AddJobAsync(
+         await _jobStorage.ScheduleJobAsync(
             new JobStoreItem {
                JobType = typeof(TJob),
                PerformAt = performAtUtc,
@@ -116,7 +116,7 @@ internal class JobScheduler : IJobScheduler
                CronExpression = cronExpression
             };
             
-            await _jobStorage.AddJobAsync(jobItem, cancellationToken);   
+            await _jobStorage.ScheduleJobAsync(jobItem, cancellationToken);   
          }
          else
          {
@@ -132,7 +132,7 @@ internal class JobScheduler : IJobScheduler
                CronExpression = cronExpression
             };
             
-            await _jobStorage.AddJobAsync(jobItem, cancellationToken);
+            await _jobStorage.ScheduleJobAsync(jobItem, cancellationToken);
          }
          
          Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, parameters, cronExpression.ToString());

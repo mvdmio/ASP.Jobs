@@ -12,21 +12,17 @@ namespace mvdmio.ASP.Jobs.Internals.Storage;
 
 internal class InMemoryJobStorage : IJobStorage
 {
-   private class JobState
-   {
-      public DateTime? StartedAt { get; set; }
-   }
-   
    private readonly IClock _clock;
-   private readonly IDictionary<string, (JobStoreItem item, JobState state)> _jobs = new Dictionary<string, (JobStoreItem, JobState)>();
+   private readonly IDictionary<string, JobStoreItem> _scheduledJobs = new Dictionary<string, JobStoreItem>();
+   private readonly IDictionary<string, JobStoreItem> _inProgressJobs = new Dictionary<string, JobStoreItem>();
    private readonly SemaphoreSlim _jobQueueLock = new(1, 1);
 
-   internal IEnumerable<JobStoreItem> Jobs => _jobs.Values.Select(x => x.item);
+   internal IEnumerable<JobStoreItem> ScheduledJobs => _scheduledJobs.Values;
+   internal IEnumerable<JobStoreItem> InProgressJobs => _inProgressJobs.Values;
    
-   private IEnumerable<string> GroupsInProgress => _jobs
-      .Where(x => x.Value.state.StartedAt is not null)
-      .Where(x => x.Value.item.Options.Group is not null)
-      .Select(x => x.Value.item.Options.Group!)
+   private IEnumerable<string> GroupsInProgress => _inProgressJobs
+      .Where(x => x.Value.Options.Group is not null)
+      .Select(x => x.Value.Options.Group!)
       .Distinct();
    
    public InMemoryJobStorage()
@@ -39,13 +35,13 @@ internal class InMemoryJobStorage : IJobStorage
       _clock = clock;
    }
    
-   public async Task AddJobAsync(JobStoreItem item, CancellationToken ct = default)
+   public async Task ScheduleJobAsync(JobStoreItem item, CancellationToken ct = default)
    {
       await _jobQueueLock.WaitAsync(ct);
 
       try
       {
-         _jobs[item.Options.JobId] = (item, new JobState());
+         _scheduledJobs[item.Options.JobId] = item;
       }
       finally
       {
@@ -53,47 +49,47 @@ internal class InMemoryJobStorage : IJobStorage
       }
    }
 
-   public async Task RemoveJobAsync(string jobId, CancellationToken ct = default)
+   public async Task<JobStoreItem?> StartNextJobAsync(CancellationToken ct = default)
    {
-      await _jobQueueLock.WaitAsync(ct);
-
-      try
-      {
-         _jobs.Remove(jobId);   
-      }
-      finally
-      {
-         _jobQueueLock.Release();
-      }
-   }
-
-   public async Task<JobStoreItem?> GetNextJobAsync(CancellationToken ct = default)
-   {
-      if (_jobs.Count is 0)
+      if (_scheduledJobs.Count is 0)
          return null;
 
       await _jobQueueLock.WaitAsync(ct);
 
       try
       {
-         var job = _jobs
-            .Where(x => x.Value.item.PerformAt <= _clock.UtcNow)
-            .Where(x => x.Value.state.StartedAt is null)
-            .Where(x => x.Value.item.Options.Group is null || !GroupsInProgress.Contains(x.Value.item.Options.Group!))
-            .Select(x => x.Value.item)
+         var job = _scheduledJobs
+            .Where(x => x.Value.PerformAt <= _clock.UtcNow)
+            .Where(x => x.Value.Options.Group is null || !GroupsInProgress.Contains(x.Value.Options.Group!))
+            .Select(x => x.Value)
             .FirstOrDefault();
 
          if (job is null)
             return null;
          
-         _jobs[job.Options.JobId].state.StartedAt = _clock.UtcNow;
-
+         _scheduledJobs.Remove(job.Options.JobId);
+         _inProgressJobs[job.Options.JobId] = job;
+         
          return job;
       }
       catch (Exception e)
       {
          Log.Error(e, "Error while retrieving next job");
          throw;
+      }
+      finally
+      {
+         _jobQueueLock.Release();
+      }
+   }
+   
+   public async Task FinalizeJobAsync(string jobId, CancellationToken ct = default)
+   {
+      await _jobQueueLock.WaitAsync(ct);
+
+      try
+      {
+         _inProgressJobs.Remove(jobId);   
       }
       finally
       {

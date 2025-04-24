@@ -73,7 +73,7 @@ internal class JobRunnerService : BackgroundService
 
    private async Task PerformNextJobAsync(CancellationToken cancellationToken)
    {
-      var jobBusItem = await _jobStorage.GetNextJobAsync(cancellationToken);
+      var jobBusItem = await _jobStorage.StartNextJobAsync(cancellationToken);
       if (jobBusItem is null)
       {
          await Task.Delay(1, cancellationToken);
@@ -89,7 +89,7 @@ internal class JobRunnerService : BackgroundService
       }
       finally
       {
-         await _jobStorage.RemoveJobAsync(jobBusItem.Options.JobId, cancellationToken);
+         await _jobStorage.FinalizeJobAsync(jobBusItem.Options.JobId, cancellationToken);
          
          if(jobBusItem.CronExpression is not null)
             await ScheduleNextOccurrence(jobBusItem, cancellationToken);
@@ -131,6 +131,6 @@ internal class JobRunnerService : BackgroundService
          Options = jobItem.Options
       };
       
-      await _jobStorage.AddJobAsync(newJobItem, ct);
+      await _jobStorage.ScheduleJobAsync(newJobItem, ct);
    }
 }
