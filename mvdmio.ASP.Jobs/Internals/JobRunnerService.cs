@@ -39,8 +39,19 @@ internal class JobRunnerService : BackgroundService
          runningTasks.Add(PerformAvailableJobsAsync(stoppingToken));
       }
 
-      // Wait for all running threads to complete before exiting.
-      await Task.WhenAll(runningTasks);
+      try
+      {
+         // Wait for all running threads to complete before exiting.
+         await Task.WhenAll(runningTasks);   
+      }
+      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      {
+         // Ignore cancellation exceptions; they are expected when the service is stopped.
+      }
+      catch (Exception ex)
+      {
+         Log.Error(ex, "Error while executing job runner threads");
+      }
    }
 
    private async Task PerformAvailableJobsAsync(CancellationToken cancellationToken)
@@ -55,13 +66,13 @@ internal class JobRunnerService : BackgroundService
             {
                await PerformNextJobAsync(cancellationToken);
             }
-            catch (Exception e) when (e is TaskCanceledException or OperationCanceledException)
+            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
             {
                // Ignore cancellation exceptions; they are expected when the service is stopped.
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-               Log.Error(e, "Error while performing available jobs");
+               Log.Error(ex, "Error while performing available jobs");
             }
          }
       }
@@ -89,10 +100,17 @@ internal class JobRunnerService : BackgroundService
       }
       finally
       {
-         await _jobStorage.FinalizeJobAsync(jobBusItem.Options.JobId, cancellationToken);
+         try
+         {
+            await _jobStorage.FinalizeJobAsync(jobBusItem.Options.JobId, cancellationToken);
          
-         if(jobBusItem.CronExpression is not null)
-            await ScheduleNextOccurrence(jobBusItem, cancellationToken);
+            if(jobBusItem.CronExpression is not null)
+               await ScheduleNextOccurrence(jobBusItem, cancellationToken);   
+         }
+         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+         {
+            // Ignore cancellation exceptions; they are expected when the service is stopped.
+         }
       }  
    }
 
@@ -108,6 +126,10 @@ internal class JobRunnerService : BackgroundService
          await job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken);
 
          Log.Information("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, Stopwatch.GetElapsedTime(startTime));
+      }
+      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      {
+         // Ignore cancellation exceptions; they are expected when the service is stopped.
       }
       catch (Exception e)
       {
