@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
@@ -11,6 +12,11 @@ internal interface IJobStorage
    /// Queue a job for execution.
    /// </summary>
    Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default);
+
+   /// <summary>
+   /// Queue multiple jobs for execution.
+   /// </summary>
+   Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default);
 
    /// <summary>
    /// Remove the job from storage. Either because it has been executed successfully or because it has failed.

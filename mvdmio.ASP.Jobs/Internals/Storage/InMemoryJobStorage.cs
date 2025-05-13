@@ -49,6 +49,23 @@ internal class InMemoryJobStorage : IJobStorage
       }
    }
 
+   public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
+   {
+      await _jobQueueLock.WaitAsync(ct);
+      
+      try
+      {
+         foreach (var item in items)
+         {
+            _scheduledJobs[item.Options.JobId] = item;
+         }
+      }
+      finally
+      {
+         _jobQueueLock.Release();
+      }
+   }
+
    public async Task<JobStoreItem?> StartNextJobAsync(CancellationToken ct = default)
    {
       if (_scheduledJobs.Count is 0)
