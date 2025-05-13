@@ -14,56 +14,56 @@ public interface IJob
    /// Method called when the job is scheduled.
    /// Use this method for any preparation work that needs to be done immediately when the job is created.
    /// </summary>
-   Task OnJobScheduledAsync(object properties, CancellationToken cancellationToken);
+   internal Task OnJobScheduledAsync(object properties, CancellationToken cancellationToken);
    
    /// <summary>
    /// Method called to execute the job.
    /// Use this method for all the work that needs to be done by the job.
    /// </summary>
-   Task ExecuteAsync(object properties, CancellationToken cancellationToken);
+   internal Task ExecuteAsync(object properties, CancellationToken cancellationToken);
 
    /// <summary>
    /// Method called when the job is successfully executed.
    /// Use this method for any work that needs to be done immediately after the job has been executed.
    /// </summary>
-   Task OnJobExecutedAsync(object properties, CancellationToken cancellationToken);
+   internal Task OnJobExecutedAsync(object properties, CancellationToken cancellationToken);
 
    /// <summary>
    /// Method called when the job execution throws an exception.
    /// Use this method for any work that needs to be done when a job fails.
    /// </summary>
-   Task OnJobFailedAsync(object parameters, Exception exception, CancellationToken cancellationToken);
+   internal Task OnJobFailedAsync(object parameters, Exception exception, CancellationToken cancellationToken);
 }
 
 /// <summary>
 /// Interface for a job.
 /// </summary>
 [PublicAPI]
-public interface IJob<in TProperties> : IJob
+public abstract class Job<TProperties> : IJob
 {
    /// <summary>
    /// Method called when the job is scheduled.
    /// Use this method for any preparation work that needs to be done immediately when the job is created.
    /// </summary>
-   Task OnJobScheduledAsync(TProperties parameters, CancellationToken cancellationToken);
+   public abstract Task OnJobScheduledAsync(TProperties parameters, CancellationToken cancellationToken);
    
    /// <summary>
    /// Method called to execute the job.
    /// Use this method for all the work that needs to be done by the job.
    /// </summary>
-   Task ExecuteAsync(TProperties parameters, CancellationToken cancellationToken);
+   public abstract Task ExecuteAsync(TProperties parameters, CancellationToken cancellationToken);
 
    /// <summary>
    /// Method called when the job is successfully executed.
    /// Use this method for any work that needs to be done immediately after the job has been executed.
    /// </summary>
-   Task OnJobExecutedAsync(TProperties parameters, CancellationToken cancellationToken);
+   public abstract Task OnJobExecutedAsync(TProperties parameters, CancellationToken cancellationToken);
    
    /// <summary>
    /// Method called when the job execution throws an exception.
    /// Use this method for any work that needs to be done when a job fails.
    /// </summary>
-   Task OnJobFailedAsync(TProperties parameters, Exception exception, CancellationToken cancellationToken);
+   public abstract Task OnJobFailedAsync(TProperties parameters, Exception exception, CancellationToken cancellationToken);
    
    async Task IJob.OnJobScheduledAsync(object properties, CancellationToken cancellationToken)
    {

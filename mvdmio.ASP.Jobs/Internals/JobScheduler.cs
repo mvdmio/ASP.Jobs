@@ -21,7 +21,7 @@ internal class JobScheduler : IJobScheduler
    }
 
    public async Task PerformNowAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>
+      where TJob : Job<TParameters>
    {
       try
       {
@@ -37,11 +37,18 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>
+   public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default) 
+      where TJob : Job<TParameters>
    {
-      ArgumentNullException.ThrowIfNull(parameters);
+      return PerformAsapAsync<TJob, TParameters>(parameters, new JobScheduleOptions(), cancellationToken);
+   }
 
+   public async Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
+      where TJob : Job<TParameters>
+   {
+      if(parameters is null)
+         throw new ArgumentNullException(nameof(parameters));
+      
       try
       {
          var job = GetJobFromDi<TJob, TParameters>();
@@ -66,10 +73,17 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>
+   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken cancellationToken = default) 
+      where TJob : Job<TParameters>
    {
-      ArgumentNullException.ThrowIfNull(parameters);
+      return PerformAtAsync<TJob, TParameters>(performAtUtc, parameters, new JobScheduleOptions(), cancellationToken);
+   }
+
+   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
+      where TJob : Job<TParameters>
+   {
+      if(parameters is null)
+         throw new ArgumentNullException(nameof(parameters));
 
       try
       {
@@ -95,10 +109,29 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, JobScheduleOptions? options = null, bool runImmediately = false, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>
+   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default) 
+      where TJob : Job<TParameters>
    {
-      ArgumentNullException.ThrowIfNull(parameters);
+      return PerformCronAsync<TJob, TParameters>(cronExpression, parameters, new JobScheduleOptions(), runImmediately, cancellationToken);
+   }
+
+   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, JobScheduleOptions options, bool runImmediately = false, CancellationToken cancellationToken = default) 
+      where TJob : Job<TParameters>
+   {
+      return PerformCronAsync<TJob, TParameters>(CronExpression.Parse(cronExpression), parameters, runImmediately, cancellationToken);
+   }
+
+   public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default)
+      where TJob : Job<TParameters>
+   {
+      return PerformCronAsync<TJob, TParameters>(cronExpression, parameters, new JobScheduleOptions(), runImmediately, cancellationToken);
+   }
+
+   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, JobScheduleOptions? options = null, bool runImmediately = false, CancellationToken cancellationToken = default)
+      where TJob : Job<TParameters>
+   {
+      if(parameters is null)
+         throw new ArgumentNullException(nameof(parameters));
 
       try
       {
@@ -144,7 +177,8 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   private TJob GetJobFromDi<TJob, TParameters>() where TJob : IJob<TParameters>
+   private TJob GetJobFromDi<TJob, TParameters>() 
+      where TJob : Job<TParameters>
    {
       var scope = _services.CreateScope();
       var job = scope.ServiceProvider.GetRequiredService<TJob>();

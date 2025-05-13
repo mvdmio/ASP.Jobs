@@ -16,68 +16,53 @@ public interface IJobScheduler
    /// Schedule a job to be performed immediately.
    /// </summary>
    public Task PerformNowAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>;
+      where TJob : Job<TParameters>;
 
    /// <summary>
    /// Schedule a job to be performed as soon as possible.
    /// </summary>
    public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>
-   {
-      return PerformAsapAsync<TJob, TParameters>(parameters, new JobScheduleOptions(), cancellationToken);
-   }
+      where TJob : Job<TParameters>;
    
    /// <summary>
    /// Schedule a job to be performed as soon as possible.
    /// </summary>
    public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions options, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>;
+      where TJob : Job<TParameters>;
 
    /// <summary>
    /// Schedule a job to be performed at a given time.
    /// </summary>
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>
-   {
-      return PerformAtAsync<TJob, TParameters>(performAtUtc, parameters, new JobScheduleOptions(), cancellationToken);
-   }
+      where TJob : Job<TParameters>;
    
    /// <summary>
    /// Schedule a job to be performed at a given time.
    /// </summary>
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions options, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>;
+      where TJob : Job<TParameters>;
 
    /// <summary>
    /// Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
-   public async Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>
-   {
-      await PerformCronAsync<TJob, TParameters>(CronExpression.Parse(cronExpression), parameters, new JobScheduleOptions(), runImmediately, cancellationToken);
-   }
+   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default)
+      where TJob : Job<TParameters>;
    
    /// <summary>
    /// Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
-   public async Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, JobScheduleOptions options, bool runImmediately = false, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>
-   {
-      await PerformCronAsync<TJob, TParameters>(CronExpression.Parse(cronExpression), parameters, options, runImmediately, cancellationToken);
-   }
+   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, JobScheduleOptions options, bool runImmediately = false, CancellationToken cancellationToken = default)
+      where TJob : Job<TParameters>;
 
    /// <summary>
    /// Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
    public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>
-   {
-      return PerformCronAsync<TJob, TParameters>(cronExpression, parameters, new JobScheduleOptions(), runImmediately, cancellationToken);
-   }
+      where TJob : Job<TParameters>;
    
    /// <summary>
    /// Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
    public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, JobScheduleOptions options, bool runImmediately = false, CancellationToken cancellationToken = default)
-      where TJob : IJob<TParameters>;
+      where TJob : Job<TParameters>;
 }

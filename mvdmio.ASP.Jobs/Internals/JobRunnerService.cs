@@ -125,7 +125,9 @@ internal class JobRunnerService : BackgroundService
          await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
          await job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken);
 
-         Log.Information("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, Stopwatch.GetElapsedTime(startTime));
+         var endTime = Stopwatch.GetTimestamp();
+         var duration = new TimeSpan(endTime - startTime);
+         Log.Information("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
       }
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {
@@ -140,8 +142,9 @@ internal class JobRunnerService : BackgroundService
 
    private async Task ScheduleNextOccurrence(JobStoreItem jobItem, CancellationToken ct = default)
    {
-      ArgumentNullException.ThrowIfNull(jobItem.CronExpression);
-
+      if(jobItem.CronExpression is null)
+         throw new ArgumentNullException(nameof(jobItem.CronExpression));
+      
       var nextOccurrence = jobItem.CronExpression.GetNextOccurrence(DateTime.UtcNow);
       if(nextOccurrence is null)
          throw new InvalidOperationException("CRON expression does not have a next occurrence.");
