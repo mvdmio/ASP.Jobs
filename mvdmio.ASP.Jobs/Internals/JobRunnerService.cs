@@ -87,7 +87,7 @@ internal class JobRunnerService : BackgroundService
       var jobBusItem = await _jobStorage.StartNextJobAsync(cancellationToken);
       if (jobBusItem is null)
       {
-         await Task.Delay(1, cancellationToken);
+         await Task.Delay(100, cancellationToken);
          return;
       }
 
