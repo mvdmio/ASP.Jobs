@@ -51,6 +51,19 @@ public class InMemoryJobStorageTests
       _sut.ScheduledJobs.Should().HaveCount(1);
       _sut.ScheduledJobs.First().Should().Be(secondJobItem);
    }
+
+   [Fact]
+   public async Task AddJobs()
+   {
+      // Arrange
+      
+      // Act
+      var jobs = await AddNewJobStoreItems(100);
+      
+      // Assert
+      _sut.ScheduledJobs.Should().HaveCount(100);
+      _sut.ScheduledJobs.Should().BeEquivalentTo(jobs);
+   }
    
    [Fact]
    public async Task RemoveJob_ShouldNotDoAnything_WhenEmpty()
@@ -197,5 +210,24 @@ public class InMemoryJobStorageTests
       await _sut.ScheduleJobAsync(jobItem, CancellationToken);
       
       return jobItem;
+   }
+   
+   private async Task<JobStoreItem[]> AddNewJobStoreItems(int count, DateTime? performAt = null, string? group = null)
+   {
+      var items = Enumerable.Range(0, count)
+         .Select(_ => new JobStoreItem {
+               JobType = typeof(TestJob),
+               Parameters = null!,
+               PerformAt = performAt ?? _clock.UtcNow,
+               Options = new JobScheduleOptions {
+                  JobId = Guid.NewGuid().ToString(),
+                  Group = group
+               }
+            }
+         )
+         .ToArray();
+      
+      await _sut.ScheduleJobsAsync(items, CancellationToken);
+      return items;
    }
 }

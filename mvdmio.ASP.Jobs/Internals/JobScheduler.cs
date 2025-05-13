@@ -45,9 +45,40 @@ internal class JobScheduler : IJobScheduler
       return PerformAsapAsync<TJob, TParameters>(parameters, new JobScheduleOptions(), cancellationToken);
    }
 
-   public Task PerformAsapAsync<TJob, TParameters>(IEnumerable<TParameters> parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
+   public async Task PerformAsapAsync<TJob, TParameters>(IEnumerable<TParameters> parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
-      return PerformAsapAsync<TJob, TParameters>(parameters, new JobScheduleOptions(), cancellationToken);
+      if(parameters is null)
+         throw new ArgumentNullException(nameof(parameters));
+
+      var enumeratedParameters = parameters.ToArray();
+      if (enumeratedParameters.Length is 0)
+         return;
+      
+      try
+      {
+         var job = GetJobFromDi<TJob, TParameters>();
+
+         await _jobStorage.ScheduleJobsAsync(
+            enumeratedParameters.Select(
+               x => new JobStoreItem {
+                  JobType = typeof(TJob),
+                  PerformAt = DateTime.UtcNow,
+                  Parameters = x!,
+                  Options = new JobScheduleOptions()
+               }
+            ),
+            cancellationToken
+         );
+         
+         await Task.WhenAll(enumeratedParameters.Select(x => job.OnJobScheduledAsync(x, cancellationToken)));
+         
+         Log.Information("Scheduled {Count} jobs of type {JobType}", enumeratedParameters.Length, typeof(TJob).Name);
+      }
+      catch (Exception e)
+      {
+         Log.Error(e, "Error while scheduling {Count} jobs of type {JobType}", enumeratedParameters.Length, typeof(TJob).Name);
+         throw;
+      }
    }
 
    public async Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
@@ -80,7 +111,13 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task PerformAsapAsync<TJob, TParameters>(IEnumerable<TParameters> parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
+   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken cancellationToken = default) 
+      where TJob : Job<TParameters>
+   {
+      return PerformAtAsync<TJob, TParameters>(performAtUtc, parameters, new JobScheduleOptions(), cancellationToken);
+   }
+
+   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<TParameters> parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
       if(parameters is null)
          throw new ArgumentNullException(nameof(parameters));
@@ -97,9 +134,9 @@ internal class JobScheduler : IJobScheduler
             enumeratedParameters.Select(
                x => new JobStoreItem {
                   JobType = typeof(TJob),
-                  PerformAt = DateTime.UtcNow,
+                  PerformAt = performAtUtc,
                   Parameters = x!,
-                  Options = options ?? new JobScheduleOptions()
+                  Options = new JobScheduleOptions()
                }
             ),
             cancellationToken
@@ -107,24 +144,13 @@ internal class JobScheduler : IJobScheduler
          
          await Task.WhenAll(enumeratedParameters.Select(x => job.OnJobScheduledAsync(x, cancellationToken)));
          
-         Log.Information("Scheduled {Count} jobs of type {JobType}", enumeratedParameters.Length, typeof(TJob).Name);
+         Log.Information("Scheduled {Count} jobs of type {JobType} to run at {Time}", enumeratedParameters.Length, typeof(TJob).Name, performAtUtc);
       }
       catch (Exception e)
       {
          Log.Error(e, "Error while scheduling {Count} jobs of type {JobType}", enumeratedParameters.Length, typeof(TJob).Name);
          throw;
       }
-   }
-
-   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken cancellationToken = default) 
-      where TJob : Job<TParameters>
-   {
-      return PerformAtAsync<TJob, TParameters>(performAtUtc, parameters, new JobScheduleOptions(), cancellationToken);
-   }
-
-   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<TParameters> parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
-   {
-      return PerformAtAsync<TJob, TParameters>(performAtUtc, parameters, new JobScheduleOptions(), cancellationToken);
    }
 
    public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
@@ -153,42 +179,6 @@ internal class JobScheduler : IJobScheduler
       catch (Exception e)
       {
          Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
-         throw;
-      }
-   }
-
-   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<TParameters> parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
-   {
-      if(parameters is null)
-         throw new ArgumentNullException(nameof(parameters));
-
-      var enumeratedParameters = parameters.ToArray();
-      if (enumeratedParameters.Length is 0)
-         return;
-      
-      try
-      {
-         var job = GetJobFromDi<TJob, TParameters>();
-
-         await _jobStorage.ScheduleJobsAsync(
-            enumeratedParameters.Select(
-               x => new JobStoreItem {
-                  JobType = typeof(TJob),
-                  PerformAt = performAtUtc,
-                  Parameters = x!,
-                  Options = options ?? new JobScheduleOptions()
-               }
-            ),
-            cancellationToken
-         );
-         
-         await Task.WhenAll(enumeratedParameters.Select(x => job.OnJobScheduledAsync(x, cancellationToken)));
-         
-         Log.Information("Scheduled {Count} jobs of type {JobType} to run at {Time}", enumeratedParameters.Length, typeof(TJob).Name, performAtUtc);
-      }
-      catch (Exception e)
-      {
-         Log.Error(e, "Error while scheduling {Count} jobs of type {JobType}", enumeratedParameters.Length, typeof(TJob).Name);
          throw;
       }
    }
