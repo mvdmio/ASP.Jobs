@@ -45,7 +45,10 @@ public abstract class Job<TProperties> : IJob
    /// Method called when the job is scheduled.
    /// Use this method for any preparation work that needs to be done immediately when the job is created.
    /// </summary>
-   public abstract Task OnJobScheduledAsync(TProperties parameters, CancellationToken cancellationToken);
+   public virtual Task OnJobScheduledAsync(TProperties parameters, CancellationToken cancellationToken)
+   {
+      return Task.CompletedTask;
+   }
    
    /// <summary>
    /// Method called to execute the job.
@@ -57,13 +60,19 @@ public abstract class Job<TProperties> : IJob
    /// Method called when the job is successfully executed.
    /// Use this method for any work that needs to be done immediately after the job has been executed.
    /// </summary>
-   public abstract Task OnJobExecutedAsync(TProperties parameters, CancellationToken cancellationToken);
+   public virtual Task OnJobExecutedAsync(TProperties parameters, CancellationToken cancellationToken)
+   {
+      return Task.CompletedTask;
+   }
    
    /// <summary>
    /// Method called when the job execution throws an exception.
    /// Use this method for any work that needs to be done when a job fails.
    /// </summary>
-   public abstract Task OnJobFailedAsync(TProperties parameters, Exception exception, CancellationToken cancellationToken);
+   public virtual Task OnJobFailedAsync(TProperties parameters, Exception exception, CancellationToken cancellationToken)
+   {
+      return Task.CompletedTask;
+   }
    
    async Task IJob.OnJobScheduledAsync(object properties, CancellationToken cancellationToken)
    {
