@@ -17,18 +17,18 @@ namespace mvdmio.ASP.Jobs;
 public static class Jobs
 {
    private static readonly ServiceCollection _services = new();
+   private static JobRunnerService _runner = null!;
    
    /// <inheritdoc cref="IJobScheduler" />
    public static IJobScheduler Scheduler { get; private set; } = null!;
-   private static JobRunnerService Runner { get; set; } = null!;
    
    /// <summary>
    ///   Add a new job to the service collection.
    /// </summary>
-   public static void Add<TJob, TParameters>() 
-      where TJob : Job<TParameters>
+   public static void Register<TJob>() 
+      where TJob : class, IJob
    {
-      _services.AddJob<TJob, TParameters>();
+      _services.RegisterJob<TJob>();
    }
    
    /// <summary>
@@ -41,9 +41,9 @@ public static class Jobs
       var jobStorage = new InMemoryJobStorage();
       
       Scheduler = new JobScheduler(serviceProvider, jobStorage);
-      Runner = new JobRunnerService(serviceProvider, jobStorage, new OptionsWrapper<JobConfiguration>(configuration ?? new JobConfiguration()));
+      _runner = new JobRunnerService(serviceProvider, jobStorage, new OptionsWrapper<JobConfiguration>(configuration ?? new JobConfiguration()));
 
-      AsyncHelper.RunSync(() => Runner.StartAsync(CancellationToken.None));
+      AsyncHelper.RunSync(() => _runner.StartAsync(CancellationToken.None));
    }
 
    /// <summary>
@@ -51,6 +51,6 @@ public static class Jobs
    /// </summary>
    public static void Stop()
    {
-      AsyncHelper.RunSync(() => Runner.StopAsync(CancellationToken.None));
+      AsyncHelper.RunSync(() => _runner.StopAsync(CancellationToken.None));
    }
 }

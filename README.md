@@ -18,14 +18,14 @@ public void ConfigureServices(IServiceCollection services)
 }
 ```
 
-3. Create a job by implementing the `IJob` interface:
+3. Create a job by implementing the `Job` abstract class:
 ```csharp
 public class MyJobParameters
 {
    public string Parameter { get; set; }
 }
 
-public class MyJob : IJob<MyJobParameters>
+public class MyJob : Job<MyJobParameters>
 {
     public async Task ExecuteAsync(MyJobParameters parameters, CancellationToken cancellationToken)
     {
@@ -38,7 +38,7 @@ public class MyJob : IJob<MyJobParameters>
 ```csharp
 public void ConfigureServices(IServiceCollection services)
 {
-   services.AddJob<MyJob, MyJobParameters>();
+   services.RegisterJob<MyJob>();
 }
 ```
 
@@ -55,9 +55,9 @@ public void MyController : Controller
 
    public async Task<IActionResult> ScheduleJob()
    {
-      await _jobScheduler.PerformNowAsync<MyJob>(new MyJobParameters());  // Runs the job immediately and waits for completion.
-      await _jobScheduler.PerformAsapAsync<MyJob>(new MyJobParameters()); // Runs the job on a separate thread as soon as a slot becomes available.
-      await _jobScheduler.PerformAtAsync<MyJob>(DateTime.Now, new MyJobParameters());  // Runs the job on a separate thread at the given time.
+      await _jobScheduler.PerformNowAsync<MyJob, MyJobParameters>(new MyJobParameters());  // Runs the job immediately and waits for completion.
+      await _jobScheduler.PerformAsapAsync<MyJob, MyJobParameters>(new MyJobParameters()); // Runs the job on a separate thread as soon as a slot becomes available.
+      await _jobScheduler.PerformAtAsync<MyJob, MyJobParameters>(DateTime.Now, new MyJobParameters());  // Runs the job on a separate thread at the given time.
 
       return Ok();
    }
@@ -80,4 +80,21 @@ jobScheduler.PerformCronAsync<MyJob>("0 * * * *", new MyJobParameters());   // R
 jobScheduler.PerformCronAsync<MyJob>("0 0 * * *", new MyJobParameters());   // Run once a day at midnight
 jobScheduler.PerformCronAsync<MyJob>("0 0 * * 0", new MyJobParameters());   // Run once a week at midnight on Sunday morning
 jobScheduler.PerformCronAsync<MyJob>("0 0 1 * *", new MyJobParameters());   // Run once a month at midnight of the first day of the month
+```
+
+## .NET Framework
+It is possible to use this library in .NET Framework applications. However, since those applications don't generally use Dependency Injection you can use the static `Jobs` class for registering jobs, scheduling jobs, and starting the job runner process.
+
+```csharp
+// In your application startup code
+Jobs.Register<MyJob>(); // All jobs must be registered before starting the job runner
+Jobs.Start();
+    
+// In you application shutdown code
+Jobs.Stop();
+
+// In your application code
+Jobs.Scheduler.PerformNow<MyJob, MyJobParameters>(new MyJobParameters());
+Jobs.Scheduler.PerformAsap<MyJob, MyJobParameters>(new MyJobParameters());
+Jobs.Scheduler.PerformAt<MyJob, MyJobParameters>(DateTime.Now, new MyJobParameters());
 ```
