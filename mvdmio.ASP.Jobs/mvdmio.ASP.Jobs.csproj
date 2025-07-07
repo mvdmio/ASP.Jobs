@@ -1,47 +1,53 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-     <LangVersion>latest</LangVersion>
-     <ImplicitUsings>disable</ImplicitUsings>
-     <Nullable>enable</Nullable>
-     <DebugType>embedded</DebugType>
-     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-  </PropertyGroup>
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <DebugType>embedded</DebugType>
+        <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+        <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    </PropertyGroup>
 
-   <PropertyGroup>
-      <Version>2.2.1</Version>
-      <Title>mvdmio.ASP.Jobs</Title>
-      <Description>Job scheduling library for use in ASP.NET projects.</Description>
-      <Company>mvdmio</Company>
-      <Authors>Michiel van der Meer</Authors>
-      <PackageReadmeFile>Readme.md</PackageReadmeFile>
-      <PackageLicenseFile>License.txt</PackageLicenseFile>
-   </PropertyGroup>
+    <PropertyGroup>
+        <Version>2.2.1</Version>
+        <Title>mvdmio.ASP.Jobs</Title>
+        <Description>Job scheduling library for use in ASP.NET projects.</Description>
+        <Company>mvdmio</Company>
+        <Authors>Michiel van der Meer</Authors>
+        <PackageReadmeFile>Readme.md</PackageReadmeFile>
+        <PackageLicenseFile>License.txt</PackageLicenseFile>
+    </PropertyGroup>
 
-   <ItemGroup>
-      <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-         <_Parameter1>mvdmio.ASP.Jobs.Tests.Unit</_Parameter1>
-      </AssemblyAttribute>
-   </ItemGroup>
-   
-   <ItemGroup>
-      <None Include="..\License.txt" PackagePath="" Pack="true" />
-      <None Include="..\Readme.md" PackagePath="" Pack="true" />
-   </ItemGroup>
+    <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>mvdmio.ASP.Jobs.Tests.Unit</_Parameter1>
+        </AssemblyAttribute>
+    </ItemGroup>
 
-   <ItemGroup>
-     <PackageReference Include="Cronos" Version="0.9.0" />
-     <PackageReference Include="JetBrains.Annotations" Version="2024.3.0" />
-     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.4" />
-     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.4" />
-     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.1" />
-     <PackageReference Include="PolySharp" Version="1.15.0">
-       <PrivateAssets>all</PrivateAssets>
-       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-     </PackageReference>
-     <PackageReference Include="Serilog" Version="4.2.0" />
-  </ItemGroup>
+    <ItemGroup>
+        <None Include="..\License.txt" PackagePath="" Pack="true"/>
+        <None Include="..\Readme.md" PackagePath="" Pack="true"/>
+    </ItemGroup>
 
+    <ItemGroup>
+        <PackageReference Include="Cronos" Version="0.9.0"/>
+        <PackageReference Include="JetBrains.Annotations" Version="2024.3.0"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.4"/>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.4"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.1"/>
+        <PackageReference Include="PolySharp" Version="1.15.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Serilog" Version="4.2.0"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+            <_Parameter1>mvdmio.ASP.Jobs.Tests.Unit</_Parameter1>
+        </AssemblyAttribute>
+    </ItemGroup>
+    
 </Project>

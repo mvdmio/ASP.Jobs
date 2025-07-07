@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,32 +18,24 @@ internal class JobRunnerService : BackgroundService
    private readonly IServiceProvider _services;
    private readonly IJobStorage _jobStorage;
    private readonly IOptions<JobConfiguration> _options;
-   private readonly SemaphoreSlim _jobRunnerLock;
-   
+
    private JobConfiguration Configuration => _options.Value;
-   
+
    public JobRunnerService(IServiceProvider services, IJobStorage jobStorage, IOptions<JobConfiguration> options)
    {
       _services = services;
       _jobStorage = jobStorage;
       _options = options;
-      _jobRunnerLock = new SemaphoreSlim(Configuration.MaxConcurrentJobs, Configuration.MaxConcurrentJobs);
    }
-   
+
    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
    {
-      var runningTasks = new List<Task>();
-      
-      // Start job runner threads
-      while (!stoppingToken.IsCancellationRequested && _jobRunnerLock.CurrentCount > 0)
-      {
-         runningTasks.Add(PerformAvailableJobsAsync(stoppingToken));
-      }
+      var runningTasks = Enumerable.Range(0, Configuration.MaxConcurrentJobs).Select(_ => PerformAvailableJobsAsync(stoppingToken));
 
       try
       {
          // Wait for all running threads to complete before exiting.
-         await Task.WhenAll(runningTasks);   
+         await Task.WhenAll(runningTasks);
       }
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {
@@ -56,29 +49,20 @@ internal class JobRunnerService : BackgroundService
 
    private async Task PerformAvailableJobsAsync(CancellationToken cancellationToken)
    {
-      await _jobRunnerLock.WaitAsync(cancellationToken);
-
-      try
+      while (!cancellationToken.IsCancellationRequested)
       {
-         while (!cancellationToken.IsCancellationRequested)
+         try
          {
-            try
-            {
-               await PerformNextJobAsync(cancellationToken);
-            }
-            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-            {
-               // Ignore cancellation exceptions; they are expected when the service is stopped.
-            }
-            catch (Exception ex)
-            {
-               Log.Error(ex, "Error while performing available jobs");
-            }
+            await PerformNextJobAsync(cancellationToken);
          }
-      }
-      finally
-      {
-         _jobRunnerLock.Release();
+         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+         {
+            // Ignore cancellation exceptions; they are expected when the service is stopped.
+         }
+         catch (Exception ex)
+         {
+            Log.Error(ex, "Error while performing available jobs");
+         }
       }
    }
 
@@ -103,15 +87,15 @@ internal class JobRunnerService : BackgroundService
          try
          {
             await _jobStorage.FinalizeJobAsync(jobBusItem.Options.JobId, cancellationToken);
-         
-            if(jobBusItem.CronExpression is not null)
-               await ScheduleNextOccurrence(jobBusItem, cancellationToken);   
+
+            if (jobBusItem.CronExpression is not null)
+               await ScheduleNextOccurrence(jobBusItem, cancellationToken);
          }
          catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
          {
             // Ignore cancellation exceptions; they are expected when the service is stopped.
          }
-      }  
+      }
    }
 
    private static async Task PerformJob(IJob job, JobStoreItem jobBusItem, CancellationToken cancellationToken)
@@ -142,11 +126,11 @@ internal class JobRunnerService : BackgroundService
 
    private async Task ScheduleNextOccurrence(JobStoreItem jobItem, CancellationToken ct = default)
    {
-      if(jobItem.CronExpression is null)
+      if (jobItem.CronExpression is null)
          throw new ArgumentNullException(nameof(jobItem.CronExpression));
-      
+
       var nextOccurrence = jobItem.CronExpression.GetNextOccurrence(DateTime.UtcNow);
-      if(nextOccurrence is null)
+      if (nextOccurrence is null)
          throw new InvalidOperationException("CRON expression does not have a next occurrence.");
 
       var newJobItem = new JobStoreItem {
@@ -155,7 +139,7 @@ internal class JobRunnerService : BackgroundService
          Parameters = jobItem.Parameters,
          Options = jobItem.Options
       };
-      
+
       await _jobStorage.ScheduleJobAsync(newJobItem, ct);
    }
 }

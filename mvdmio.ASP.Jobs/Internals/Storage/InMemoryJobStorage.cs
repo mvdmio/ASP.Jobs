@@ -113,4 +113,15 @@ internal class InMemoryJobStorage : IJobStorage
          _jobQueueLock.Release();
       }
    }
+
+   internal async Task WaitForAllJobsFinishedAsync(CancellationToken ct = default)
+   {
+      while (ct.IsCancellationRequested == false)
+      {
+         if(_scheduledJobs.Count == 0 && _inProgressJobs.Count == 0 && _jobQueueLock.CurrentCount == 1)
+            return;
+         
+         await Task.Delay(1, ct);
+      }
+   }
 }

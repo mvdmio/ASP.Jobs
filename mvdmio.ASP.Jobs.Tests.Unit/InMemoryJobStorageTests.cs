@@ -16,7 +16,6 @@ public class InMemoryJobStorageTests
    public InMemoryJobStorageTests()
    {
       _clock = new TestClock();
-
       _sut = new InMemoryJobStorage(_clock);
    }
 
