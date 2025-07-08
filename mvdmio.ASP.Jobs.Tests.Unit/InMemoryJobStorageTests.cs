@@ -93,7 +93,7 @@ public class InMemoryJobStorageTests
    }
    
    [Fact]
-   public async Task GetNextJob_ShouldReturnNull_WhenEmpty()
+   public async Task StartNextJob_ShouldReturnNull_WhenEmpty()
    {
       // Arrange
       
@@ -105,7 +105,7 @@ public class InMemoryJobStorageTests
    }
 
    [Fact]
-   public async Task GetNextJob_ShouldReturnJob_WhenExists()
+   public async Task StartNextJob_ShouldReturnJob_WhenExists()
    {
       // Arrange
       var jobStoreItem = await AddNewJobStoreItem();
@@ -118,7 +118,7 @@ public class InMemoryJobStorageTests
    }
    
    [Fact]
-   public async Task GetNextJob_ShouldReturnNull_WhenAllJobsAreInProgress()
+   public async Task StartNextJob_ShouldReturnNull_WhenAllJobsAreInProgress()
    {
       // Arrange
       _ = await AddNewJobStoreItem();
@@ -132,7 +132,7 @@ public class InMemoryJobStorageTests
    }
    
    [Fact]
-   public async Task GetNextJob_ShouldSkipFutureJobs()
+   public async Task StartNextJob_ShouldSkipFutureJobs()
    {
       // Arrange
       _ = await AddNewJobStoreItem(_clock.UtcNow.AddDays(1));
@@ -146,7 +146,7 @@ public class InMemoryJobStorageTests
    }
    
    [Fact]
-   public async Task GetNextJob_ShouldSkipJobsInGroupsThatAreAlreadyInProgress()
+   public async Task StartNextJob_ShouldSkipJobsInGroupsThatAreAlreadyInProgress()
    {
       // Arrange
       var firstInGroup = await AddNewJobStoreItem(group: "test");
@@ -162,7 +162,7 @@ public class InMemoryJobStorageTests
    }
    
    [Fact]
-   public async Task GetNextJob_ShouldReturnNextInGroupAfterPreviousJobIsFinished()
+   public async Task StartNextJob_ShouldReturnNextInGroupAfterPreviousJobIsFinished()
    {
       // Arrange
       var firstInGroup = await AddNewJobStoreItem(group: "test");
@@ -178,6 +178,25 @@ public class InMemoryJobStorageTests
       secondResult.Should().Be(secondInGroup);
    }
 
+   [Fact] // There was a bug where jobs were sorted on their ID instead of their scheduled time.
+   public async Task StartNextJob_ShouldReturnJobsInCorrectOrder()
+   {
+      // Arrange
+      var job1 = await AddNewJobStoreItem(id: "A", performAt: DateTime.UtcNow.Subtract(TimeSpan.FromSeconds(1))); // Should be executed last
+      var job2 = await AddNewJobStoreItem(id: "B", performAt: DateTime.UtcNow.Subtract(TimeSpan.FromSeconds(2))); // Should be executed second
+      var job3 = await AddNewJobStoreItem(id: "C", performAt: DateTime.UtcNow.Subtract(TimeSpan.FromSeconds(3))); // Should be executed first
+      
+      // Act
+      var firstJob = await _sut.StartNextJobAsync(CancellationToken);
+      var secondJob = await _sut.StartNextJobAsync(CancellationToken);
+      var thirdJob = await _sut.StartNextJobAsync(CancellationToken);
+      
+      // Assert
+      firstJob.Should().Be(job3);
+      secondJob.Should().Be(job2);
+      thirdJob.Should().Be(job1);
+   }
+   
    [Fact]
    public async Task ReschedulingJobThatIsCurrentlyInProgress()
    {

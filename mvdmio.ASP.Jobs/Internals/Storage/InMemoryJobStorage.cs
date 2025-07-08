@@ -78,6 +78,7 @@ internal class InMemoryJobStorage : IJobStorage
          var job = _scheduledJobs
             .Where(x => x.Value.PerformAt <= _clock.UtcNow)
             .Where(x => x.Value.Options.Group is null || !GroupsInProgress.Contains(x.Value.Options.Group!))
+            .OrderBy(x => x.Value.PerformAt)
             .Select(x => x.Value)
             .FirstOrDefault();
 
