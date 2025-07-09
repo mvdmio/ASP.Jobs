@@ -1,6 +1,9 @@
 ﻿using JetBrains.Annotations;
+using Microsoft.Extensions.DependencyInjection;
+using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
+using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 
 namespace mvdmio.ASP.Jobs;
 
@@ -36,5 +39,25 @@ public class JobRunnerConfiguration
    public void UsePostgresStorage(PostgresJobStorageConfiguration configuration)
    {
       JobStorage = new PostgresJobStorage(configuration);
+   }
+
+   internal void SetupServices(IServiceCollection services)
+   {
+      if (JobStorage is null or InMemoryJobStorage)
+      {
+         services.AddSingleton(JobStorage ?? new InMemoryJobStorage());   
+      }
+      else if (JobStorage is PostgresJobStorage postgres)
+      {
+         services.AddSingleton(postgres);
+         services.AddSingleton(postgres.Configuration);
+         services.AddHostedService<PostgresMigrationService>();
+      }
+
+      if (IsSchedulerEnabled)
+         services.AddSingleton<IJobScheduler, JobScheduler>();
+
+      if (IsRunnerEnabled)
+         services.AddHostedService<JobRunnerService>();
    }
 }

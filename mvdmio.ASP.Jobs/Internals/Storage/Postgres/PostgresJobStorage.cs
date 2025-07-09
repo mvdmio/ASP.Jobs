@@ -5,8 +5,9 @@ using System.Threading.Tasks;
 using JetBrains.Annotations;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
+using mvdmio.Database.PgSQL;
 
-namespace mvdmio.ASP.Jobs.Internals.Storage;
+namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 
 /// <summary>
 ///    Configuration options for the Postgres job storage.
@@ -22,11 +23,15 @@ public sealed class PostgresJobStorageConfiguration
 
 internal sealed class PostgresJobStorage : IJobStorage
 {
-   private readonly PostgresJobStorageConfiguration _configuration;
+   private DatabaseConnection _db;
+   
+   public PostgresJobStorageConfiguration Configuration { get; }
 
    public PostgresJobStorage(PostgresJobStorageConfiguration configuration)
    {
-      _configuration = configuration;
+      Configuration = configuration;
+      
+      _db = new DatabaseConnection(configuration.ConnectionString);
    }
 
    public Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default)

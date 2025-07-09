@@ -38,7 +38,7 @@ internal sealed class InMemoryJobStorage : IJobStorage
 
       try
       {
-         _scheduledJobs[item.Options.JobId] = item;
+         _scheduledJobs[item.Options.JobName] = item;
       }
       finally
       {
@@ -54,7 +54,7 @@ internal sealed class InMemoryJobStorage : IJobStorage
       {
          foreach (var item in items)
          {
-            _scheduledJobs[item.Options.JobId] = item;
+            _scheduledJobs[item.Options.JobName] = item;
          }
       }
       finally
@@ -77,8 +77,8 @@ internal sealed class InMemoryJobStorage : IJobStorage
          if (job is null)
             return null;
 
-         _scheduledJobs.Remove(job.Options.JobId);
-         _inProgressJobs[job.Options.JobId] = job;
+         _scheduledJobs.Remove(job.Options.JobName);
+         _inProgressJobs[job.Options.JobName] = job;
 
          return job;
       }

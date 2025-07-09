@@ -85,7 +85,7 @@ internal class JobRunnerService : BackgroundService
       {
          try
          {
-            await _jobStorage.FinalizeJobAsync(jobBusItem.Options.JobId, cancellationToken);
+            await _jobStorage.FinalizeJobAsync(jobBusItem.Options.JobName, cancellationToken);
 
             if (jobBusItem.CronExpression is not null)
                await ScheduleNextOccurrence(jobBusItem, cancellationToken);

@@ -88,7 +88,7 @@ public class InMemoryJobStorageTests
       _ = await _sut.StartNextJobAsync(CancellationToken);
 
       // Act
-      await _sut.FinalizeJobAsync(jobStoreItem.Options.JobId, CancellationToken);
+      await _sut.FinalizeJobAsync(jobStoreItem.Options.JobName, CancellationToken);
 
       // Assert
       _sut.ScheduledJobs.Should().HaveCount(0);
@@ -173,7 +173,7 @@ public class InMemoryJobStorageTests
 
       // Act
       _ = await _sut.StartNextJobAsync(CancellationToken);
-      await _sut.FinalizeJobAsync(firstInGroup.Options.JobId, CancellationToken);
+      await _sut.FinalizeJobAsync(firstInGroup.Options.JobName, CancellationToken);
 
       var secondResult = await _sut.StartNextJobAsync(CancellationToken);
 
@@ -223,7 +223,7 @@ public class InMemoryJobStorageTests
          Parameters = null!,
          PerformAt = performAt ?? _clock.UtcNow,
          Options = new JobScheduleOptions {
-            JobId = id ?? Guid.NewGuid().ToString(),
+            JobName = id ?? Guid.NewGuid().ToString(),
             Group = group
          }
       };
@@ -241,7 +241,7 @@ public class InMemoryJobStorageTests
                Parameters = null!,
                PerformAt = performAt ?? _clock.UtcNow,
                Options = new JobScheduleOptions {
-                  JobId = Guid.NewGuid().ToString(),
+                  JobName = Guid.NewGuid().ToString(),
                   Group = group
                }
             }

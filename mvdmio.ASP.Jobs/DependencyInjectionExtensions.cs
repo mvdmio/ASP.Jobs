@@ -1,8 +1,6 @@
 ﻿using System;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
-using mvdmio.ASP.Jobs.Internals;
-using mvdmio.ASP.Jobs.Internals.Storage;
 
 namespace mvdmio.ASP.Jobs;
 
@@ -21,13 +19,8 @@ public static class DependencyInjectionExtensions
       var configuration = new JobRunnerConfiguration();
       configure?.Invoke(configuration);
 
-      services.AddSingleton(configuration.JobStorage ?? new InMemoryJobStorage());
-
-      if (configuration.IsSchedulerEnabled)
-         services.AddSingleton<IJobScheduler, JobScheduler>();
-
-      if (configuration.IsRunnerEnabled)
-         services.AddHostedService<JobRunnerService>();
+      // Let the configuration register the configured services.
+      configuration.SetupServices(services);
    }
 
    /// <summary>

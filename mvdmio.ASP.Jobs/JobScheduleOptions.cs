@@ -8,9 +8,9 @@ namespace mvdmio.ASP.Jobs;
 public class JobScheduleOptions
 {
    /// <summary>
-   ///    Id for this job schedule. If a job with the same ID already exists, it will be replaced.
+   ///    Name for this scheduled job. If a job with the same name is not already started it will be replaced.
    /// </summary>
-   public string JobId { get; init; } = Guid.NewGuid().ToString();
+   public string JobName { get; init; } = Guid.NewGuid().ToString();
 
    /// <summary>
    ///    Jobs in the same group will be executed in the order they were scheduled without running at the same time.
