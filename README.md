@@ -1,13 +1,17 @@
 # mvdmio.ASP.Jobs
+
 A library for scheduling jobs in ASP.NET Core applications.
 
 ## Usage
+
 1. Add the NuGet package to your project:
+
 ```bash
 dotnet add package mvdmio.ASP.Jobs
 ```
 
 2. Register the job scheduler and job runner in your `Startup.cs`:
+
 ```csharp
 public void ConfigureServices(IServiceCollection services)
 {
@@ -19,6 +23,7 @@ public void ConfigureServices(IServiceCollection services)
 ```
 
 3. Create a job by implementing the `Job` abstract class:
+
 ```csharp
 public class MyJobParameters
 {
@@ -35,6 +40,7 @@ public class MyJob : Job<MyJobParameters>
 ```
 
 4. Register the job in your DI container:
+
 ```csharp
 public void ConfigureServices(IServiceCollection services)
 {
@@ -43,6 +49,7 @@ public void ConfigureServices(IServiceCollection services)
 ```
 
 5. Schedule the job in your application:
+
 ```csharp
 public void MyController : Controller
 {
@@ -65,11 +72,13 @@ public void MyController : Controller
 ```
 
 ## Scheduled jobs (CRON)
+
 You can schedule any job to run repeatedly using CRON expressions.
 
 This library uses the [Cronos](https://github.com/HangfireIO/Cronos) nuget package to parse CRON expressions.
 
-To schedule a job to run repeatedly, use the `PerformCronAsync` method on the `IJobScheduler` interface. Usually this is done during application startup.
+To schedule a job to run repeatedly, use the `PerformCronAsync` method on the `IJobScheduler` interface. Usually this is
+done during application startup.
 
 ```csharp
 var jobScheduler = application.Services.GetRequiredService<IJobScheduler>();
@@ -83,7 +92,10 @@ jobScheduler.PerformCronAsync<MyJob>("0 0 1 * *", new MyJobParameters());   // R
 ```
 
 ## .NET Framework
-It is possible to use this library in .NET Framework applications. However, since those applications don't generally use Dependency Injection you can use the static `Jobs` class for registering jobs, scheduling jobs, and starting the job runner process.
+
+It is possible to use this library in .NET Framework applications. However, since those applications don't generally use
+Dependency Injection you can use the static `Jobs` class for registering jobs, scheduling jobs, and starting the job
+runner process.
 
 ```csharp
 // In your application startup code

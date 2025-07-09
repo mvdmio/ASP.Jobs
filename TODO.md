@@ -1,5 +1,4 @@
 - OpenTelemetry integration
-- Unit test CRON jobs, exceptions, fail scenarios
 - Add PostgreSQL job store
 - Cancel scheduled job
-  - What if that job is in progress?
+    - What if that job is in progress?

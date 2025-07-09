@@ -13,8 +13,8 @@ namespace mvdmio.ASP.Jobs.Internals;
 
 internal class JobScheduler : IJobScheduler
 {
-   private readonly IServiceProvider _services;
    private readonly IJobStorage _jobStorage;
+   private readonly IServiceProvider _services;
 
    public JobScheduler(IServiceProvider services, IJobStorage jobStorage)
    {
@@ -22,8 +22,7 @@ internal class JobScheduler : IJobScheduler
       _jobStorage = jobStorage;
    }
 
-   public async Task PerformNowAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default)
-      where TJob : Job<TParameters>
+   public async Task PerformNowAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
       try
       {
@@ -39,28 +38,26 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default) 
-      where TJob : Job<TParameters>
+   public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
       return PerformAsapAsync<TJob, TParameters>(parameters, new JobScheduleOptions(), cancellationToken);
    }
 
    public async Task PerformAsapAsync<TJob, TParameters>(IEnumerable<TParameters> parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
-      if(parameters is null)
+      if (parameters is null)
          throw new ArgumentNullException(nameof(parameters));
 
       var enumeratedParameters = parameters.ToArray();
       if (enumeratedParameters.Length is 0)
          return;
-      
+
       try
       {
          var job = GetJobFromDi<TJob, TParameters>();
 
          await _jobStorage.ScheduleJobsAsync(
-            enumeratedParameters.Select(
-               x => new JobStoreItem {
+            enumeratedParameters.Select(x => new JobStoreItem {
                   JobType = typeof(TJob),
                   PerformAt = DateTime.UtcNow,
                   Parameters = x!,
@@ -69,9 +66,9 @@ internal class JobScheduler : IJobScheduler
             ),
             cancellationToken
          );
-         
+
          await Task.WhenAll(enumeratedParameters.Select(x => job.OnJobScheduledAsync(x, cancellationToken)));
-         
+
          Log.Information("Scheduled {Count} jobs of type {JobType}", enumeratedParameters.Length, typeof(TJob).Name);
       }
       catch (Exception e)
@@ -81,16 +78,15 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
-      where TJob : Job<TParameters>
+   public async Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
-      if(parameters is null)
+      if (parameters is null)
          throw new ArgumentNullException(nameof(parameters));
-      
+
       try
       {
          var job = GetJobFromDi<TJob, TParameters>();
-         
+
          await job.OnJobScheduledAsync(parameters, cancellationToken);
          await _jobStorage.ScheduleJobAsync(
             new JobStoreItem {
@@ -111,28 +107,26 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken cancellationToken = default) 
-      where TJob : Job<TParameters>
+   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
       return PerformAtAsync<TJob, TParameters>(performAtUtc, parameters, new JobScheduleOptions(), cancellationToken);
    }
 
    public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<TParameters> parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
-      if(parameters is null)
+      if (parameters is null)
          throw new ArgumentNullException(nameof(parameters));
 
       var enumeratedParameters = parameters.ToArray();
       if (enumeratedParameters.Length is 0)
          return;
-      
+
       try
       {
          var job = GetJobFromDi<TJob, TParameters>();
 
          await _jobStorage.ScheduleJobsAsync(
-            enumeratedParameters.Select(
-               x => new JobStoreItem {
+            enumeratedParameters.Select(x => new JobStoreItem {
                   JobType = typeof(TJob),
                   PerformAt = performAtUtc,
                   Parameters = x!,
@@ -141,9 +135,9 @@ internal class JobScheduler : IJobScheduler
             ),
             cancellationToken
          );
-         
+
          await Task.WhenAll(enumeratedParameters.Select(x => job.OnJobScheduledAsync(x, cancellationToken)));
-         
+
          Log.Information("Scheduled {Count} jobs of type {JobType} to run at {Time}", enumeratedParameters.Length, typeof(TJob).Name, performAtUtc);
       }
       catch (Exception e)
@@ -153,16 +147,15 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default)
-      where TJob : Job<TParameters>
+   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions? options = null, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
-      if(parameters is null)
+      if (parameters is null)
          throw new ArgumentNullException(nameof(parameters));
 
       try
       {
          var job = GetJobFromDi<TJob, TParameters>();
-         
+
          await job.OnJobScheduledAsync(parameters, cancellationToken);
          await _jobStorage.ScheduleJobAsync(
             new JobStoreItem {
@@ -183,37 +176,32 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default) 
-      where TJob : Job<TParameters>
+   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
       return PerformCronAsync<TJob, TParameters>(cronExpression, parameters, new JobScheduleOptions(), runImmediately, cancellationToken);
    }
 
-   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, JobScheduleOptions options, bool runImmediately = false, CancellationToken cancellationToken = default) 
-      where TJob : Job<TParameters>
+   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, JobScheduleOptions options, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
       return PerformCronAsync<TJob, TParameters>(CronExpression.Parse(cronExpression), parameters, runImmediately, cancellationToken);
    }
 
-   public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default)
-      where TJob : Job<TParameters>
+   public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
       return PerformCronAsync<TJob, TParameters>(cronExpression, parameters, new JobScheduleOptions(), runImmediately, cancellationToken);
    }
 
-   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, JobScheduleOptions? options = null, bool runImmediately = false, CancellationToken cancellationToken = default)
-      where TJob : Job<TParameters>
+   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, JobScheduleOptions? options = null, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
-      if(parameters is null)
+      if (parameters is null)
          throw new ArgumentNullException(nameof(parameters));
 
       try
       {
-         
          var job = GetJobFromDi<TJob, TParameters>();
          await job.OnJobScheduledAsync(parameters, cancellationToken);
 
-         if(runImmediately)
+         if (runImmediately)
          {
             var jobItem = new JobStoreItem {
                JobType = typeof(TJob),
@@ -222,8 +210,8 @@ internal class JobScheduler : IJobScheduler
                Options = options ?? new JobScheduleOptions(),
                CronExpression = cronExpression
             };
-            
-            await _jobStorage.ScheduleJobAsync(jobItem, cancellationToken);   
+
+            await _jobStorage.ScheduleJobAsync(jobItem, cancellationToken);
          }
          else
          {
@@ -238,10 +226,10 @@ internal class JobScheduler : IJobScheduler
                Options = options ?? new JobScheduleOptions(),
                CronExpression = cronExpression
             };
-            
+
             await _jobStorage.ScheduleJobAsync(jobItem, cancellationToken);
          }
-         
+
          Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, parameters, cronExpression.ToString());
       }
       catch (Exception e)
@@ -251,8 +239,7 @@ internal class JobScheduler : IJobScheduler
       }
    }
 
-   private TJob GetJobFromDi<TJob, TParameters>() 
-      where TJob : Job<TParameters>
+   private TJob GetJobFromDi<TJob, TParameters>() where TJob : Job<TParameters>
    {
       var scope = _services.CreateScope();
       var job = scope.ServiceProvider.GetRequiredService<TJob>();

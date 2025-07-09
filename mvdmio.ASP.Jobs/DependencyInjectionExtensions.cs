@@ -1,57 +1,39 @@
-﻿using System.Linq;
+﻿using System;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
-using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 
 namespace mvdmio.ASP.Jobs;
 
 /// <summary>
-/// Extension methods for dependency injection.
+///    Extension methods for dependency injection.
 /// </summary>
 [PublicAPI]
 public static class DependencyInjectionExtensions
 {
    /// <summary>
-   /// Add the jobs framework to the service collection. Includes both the scheduler and the runner.
+   ///    Add the jobs framework to the service collection. Can be configured with the <paramref name="configure" /> action.
    /// </summary>
-   /// <param name="services"></param>
-   public static void AddJobs(this IServiceCollection services)
+   public static void AddJobs(this IServiceCollection services, Action<JobRunnerConfiguration>? configure = null)
    {
-      services.AddJobsScheduler();
-      services.AddJobsRunner();
+      // Build the job runner configuration.
+      var configuration = new JobRunnerConfiguration();
+      configure?.Invoke(configuration);
+
+      services.AddSingleton(configuration.JobStorage ?? new InMemoryJobStorage());
+
+      if (configuration.IsSchedulerEnabled)
+         services.AddSingleton<IJobScheduler, JobScheduler>();
+
+      if (configuration.IsRunnerEnabled)
+         services.AddHostedService<JobRunnerService>();
    }
 
    /// <summary>
-   /// Add the job scheduler to the service collection.
+   ///    Add a job to the service collection.
    /// </summary>
-   public static void AddJobsScheduler(this IServiceCollection services)
-   {
-      services.AddSingleton<IJobScheduler, JobScheduler>();
-      
-      // Hardcoded to in-memory job bus for now
-      if(services.All(x => x.ImplementationType != typeof(InMemoryJobStorage)))
-         services.AddSingleton<IJobStorage, InMemoryJobStorage>();
-   }
-
-   /// <summary>
-   /// Add the job runner to the service collection.
-   /// </summary>
-   public static void AddJobsRunner(this IServiceCollection services)
-   {
-      services.AddHostedService<JobRunnerService>();
-      
-      // Hardcoded to in-memory job bus for now
-      if(services.All(x => x.ImplementationType != typeof(InMemoryJobStorage)))
-         services.AddSingleton<IJobStorage, InMemoryJobStorage>();
-   }
-
-   /// <summary>
-   /// Add a job to the service collection.
-   /// </summary>
-   public static void RegisterJob<TJob>(this IServiceCollection services)
-      where TJob : class, IJob
+   public static void RegisterJob<TJob>(this IServiceCollection services) where TJob : class, IJob
    {
       services.AddScoped<TJob>(); // So that you can inject the implementation directly into some classes.
       services.AddScoped<IJob, TJob>(); // So that you can inject a list if implementations into some classes.

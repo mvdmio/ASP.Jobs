@@ -9,7 +9,7 @@ internal class AsyncHelper
    private static readonly TaskFactory _taskFactory = new(CancellationToken.None, TaskCreationOptions.None, TaskContinuationOptions.None, TaskScheduler.Default);
 
    /// <summary>
-   /// Runs the given async func synchronously and returns the result.
+   ///    Runs the given async func synchronously and returns the result.
    /// </summary>
    /// <typeparam name="TResult">The type of the result.</typeparam>
    /// <param name="func">The async func to run synchronously.</param>
@@ -33,7 +33,7 @@ internal class AsyncHelper
    }
 
    /// <summary>
-   /// Runs the given async func.
+   ///    Runs the given async func.
    /// </summary>
    /// <param name="func">The async func to run synchronously.</param>
    public static void RunSync(Func<Task> func)

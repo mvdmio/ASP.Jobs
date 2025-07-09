@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -15,9 +14,9 @@ namespace mvdmio.ASP.Jobs.Internals;
 
 internal class JobRunnerService : BackgroundService
 {
-   private readonly IServiceProvider _services;
    private readonly IJobStorage _jobStorage;
    private readonly IOptions<JobConfiguration> _options;
+   private readonly IServiceProvider _services;
 
    private JobConfiguration Configuration => _options.Value;
 

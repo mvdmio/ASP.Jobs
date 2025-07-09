@@ -10,21 +10,18 @@ using Serilog;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage;
 
-internal class InMemoryJobStorage : IJobStorage
+internal sealed class InMemoryJobStorage : IJobStorage
 {
    private readonly IClock _clock;
-   private readonly IDictionary<string, JobStoreItem> _scheduledJobs = new Dictionary<string, JobStoreItem>();
    private readonly IDictionary<string, JobStoreItem> _inProgressJobs = new Dictionary<string, JobStoreItem>();
    private readonly SemaphoreSlim _jobQueueLock = new(1, 1);
+   private readonly IDictionary<string, JobStoreItem> _scheduledJobs = new Dictionary<string, JobStoreItem>();
 
    internal IEnumerable<JobStoreItem> ScheduledJobs => _scheduledJobs.Values;
    internal IEnumerable<JobStoreItem> InProgressJobs => _inProgressJobs.Values;
-   
-   private IEnumerable<string> GroupsInProgress => _inProgressJobs
-      .Where(x => x.Value.Options.Group is not null)
-      .Select(x => x.Value.Options.Group!)
-      .Distinct();
-   
+
+   private IEnumerable<string> GroupsInProgress => _inProgressJobs.Where(x => x.Value.Options.Group is not null).Select(x => x.Value.Options.Group!).Distinct();
+
    public InMemoryJobStorage()
       : this(SystemClock.Instance)
    {
@@ -34,7 +31,7 @@ internal class InMemoryJobStorage : IJobStorage
    {
       _clock = clock;
    }
-   
+
    public async Task ScheduleJobAsync(JobStoreItem item, CancellationToken ct = default)
    {
       await _jobQueueLock.WaitAsync(ct);
@@ -52,7 +49,7 @@ internal class InMemoryJobStorage : IJobStorage
    public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
    {
       await _jobQueueLock.WaitAsync(ct);
-      
+
       try
       {
          foreach (var item in items)
@@ -75,19 +72,14 @@ internal class InMemoryJobStorage : IJobStorage
 
       try
       {
-         var job = _scheduledJobs
-            .Where(x => x.Value.PerformAt <= _clock.UtcNow)
-            .Where(x => x.Value.Options.Group is null || !GroupsInProgress.Contains(x.Value.Options.Group!))
-            .OrderBy(x => x.Value.PerformAt)
-            .Select(x => x.Value)
-            .FirstOrDefault();
+         var job = _scheduledJobs.Where(x => x.Value.PerformAt <= _clock.UtcNow).Where(x => x.Value.Options.Group is null || !GroupsInProgress.Contains(x.Value.Options.Group!)).OrderBy(x => x.Value.PerformAt).Select(x => x.Value).FirstOrDefault();
 
          if (job is null)
             return null;
-         
+
          _scheduledJobs.Remove(job.Options.JobId);
          _inProgressJobs[job.Options.JobId] = job;
-         
+
          return job;
       }
       catch (Exception e)
@@ -100,14 +92,14 @@ internal class InMemoryJobStorage : IJobStorage
          _jobQueueLock.Release();
       }
    }
-   
+
    public async Task FinalizeJobAsync(string jobId, CancellationToken ct = default)
    {
       await _jobQueueLock.WaitAsync(ct);
 
       try
       {
-         _inProgressJobs.Remove(jobId);   
+         _inProgressJobs.Remove(jobId);
       }
       finally
       {
@@ -119,9 +111,9 @@ internal class InMemoryJobStorage : IJobStorage
    {
       while (ct.IsCancellationRequested == false)
       {
-         if(_scheduledJobs.Count == 0 && _inProgressJobs.Count == 0 && _jobQueueLock.CurrentCount == 1)
+         if (_scheduledJobs.Count == 0 && _inProgressJobs.Count == 0 && _jobQueueLock.CurrentCount == 1)
             return;
-         
+
          await Task.Delay(1, ct);
       }
    }

@@ -2,12 +2,12 @@
 
 public class CompletedTestJob : Job<CompletedTestJob.Parameters>
 {
-   public class Parameters
-   {
-   }
-   
    public override Task ExecuteAsync(Parameters properties, CancellationToken cancellationToken)
    {
       return Task.CompletedTask;
+   }
+
+   public class Parameters
+   {
    }
 }
