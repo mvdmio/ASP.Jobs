@@ -18,15 +18,15 @@ internal interface IJobStorage
    Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default);
 
    /// <summary>
-   ///    Remove the job from storage. Either because it has been executed successfully or because it has failed.
-   /// </summary>
-   Task FinalizeJobAsync(string jobId, CancellationToken ct = default);
-
-   /// <summary>
    ///    Retrieve the next job that may be executed and mark it as 'in progress'.
    ///    Calling this method will not return the same job twice.
    ///    This method will not return jobs that are scheduled for the future.
    ///    This method will return null if there are no jobs available.
    /// </summary>
-   Task<JobStoreItem?> StartNextJobAsync(CancellationToken ct);
+   Task<JobStoreItem?> StartNextJobAsync(CancellationToken ct = default);
+
+   /// <summary>
+   ///    Remove the job from storage. Either because it has been executed successfully or because it has failed.
+   /// </summary>
+   Task FinalizeJobAsync(string jobName, CancellationToken ct = default);
 }

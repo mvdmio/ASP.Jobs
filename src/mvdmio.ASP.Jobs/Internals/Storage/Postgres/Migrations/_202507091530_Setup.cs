@@ -31,6 +31,8 @@ internal sealed class _202507091530_Setup : IDbMigration
             PRIMARY KEY (id)
          );
          
+         CREATE INDEX idx_jobs__job_name__perform_at__created_at ON mvdmio.jobs (job_name, perform_at, created_at);
+         
          CREATE OR REPLACE FUNCTION mvdmio.trigger_update_last_updated_at() 
          RETURNS TRIGGER LANGUAGE plpgsql AS
          $$

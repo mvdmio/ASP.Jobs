@@ -4,6 +4,7 @@ using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
+using mvdmio.ASP.Jobs.Utils;
 
 namespace mvdmio.ASP.Jobs;
 
@@ -38,7 +39,7 @@ public class JobRunnerConfiguration
    /// </summary>
    public void UsePostgresStorage(PostgresJobStorageConfiguration configuration)
    {
-      JobStorage = new PostgresJobStorage(configuration);
+      JobStorage = new PostgresJobStorage(configuration, new SystemClock());
    }
 
    internal void SetupServices(IServiceCollection services)

@@ -24,10 +24,13 @@ jobs:
           dotnet-version: 9
 
       - name: Restore dependencies
-        run: dotnet restore mvdmio.ASP.Jobs
+        run: dotnet restore **/*.csproj
 
       - name: Build
-        run: dotnet build mvdmio.ASP.Jobs --no-restore
+        run: dotnet build **/*.csproj --no-restore
+
+      - name: Tests
+        run: dotnet test test/**/*.csproj --no-build --verbosity normal
 
       - name: Push package
-        run: nuget push **\*.nupkg -Source 'https://api.nuget.org/v3/index.json' -NonInteractive -SkipDuplicate -Verbosity normal
+        run: nuget push **/*.nupkg -Source 'https://api.nuget.org/v3/index.json' -NonInteractive -SkipDuplicate -Verbosity normal

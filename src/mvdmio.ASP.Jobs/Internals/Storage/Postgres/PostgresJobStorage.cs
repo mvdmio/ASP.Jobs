@@ -1,0 +1,135 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Cronos;
+using JetBrains.Annotations;
+using mvdmio.ASP.Jobs.Internals.Storage.Data;
+using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
+using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
+using mvdmio.ASP.Jobs.Utils;
+using mvdmio.Database.PgSQL;
+using mvdmio.Database.PgSQL.Models;
+using NpgsqlTypes;
+
+namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
+
+/// <summary>
+///    Configuration options for the Postgres job storage.
+/// </summary>
+[PublicAPI]
+public sealed class PostgresJobStorageConfiguration
+{
+   /// <summary>
+   ///    The connection string to the Postgres database.
+   /// </summary>
+   public required string ConnectionString { get; set; }
+}
+
+internal sealed class PostgresJobStorage : IJobStorage
+{
+   private readonly IClock _clock;
+   private readonly DatabaseConnection _db;
+   
+   public PostgresJobStorageConfiguration Configuration { get; }
+
+   public PostgresJobStorage(PostgresJobStorageConfiguration configuration, IClock clock)
+   {
+      Configuration = configuration;
+      
+      _clock = clock;
+      _db = new DatabaseConnection(configuration.ConnectionString);
+   }
+
+   public Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default)
+   {
+      return ScheduleJobsAsync([jobItem], ct);
+   }
+
+   public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
+   {
+      _ = await _db.Bulk.CopyAsync(
+         "mvdmio.jobs",
+         items,
+         new Dictionary<string, Func<JobStoreItem, DbValue>> {
+            { "job_type", item => new DbValue(item.JobType.FullName, NpgsqlDbType.Text) },
+            { "parameters_json", item => new DbValue(JsonSerializer.Serialize(item.Parameters), NpgsqlDbType.Jsonb) },
+            { "parameters_type", item => new DbValue(item.Parameters.GetType().FullName, NpgsqlDbType.Text) },
+            { "cron_expression", item => new DbValue(item.CronExpression?.ToString(), NpgsqlDbType.Text) },
+            { "job_name", item => new DbValue(item.Options.JobName, NpgsqlDbType.Text) },
+            { "job_group", item => new DbValue(item.Options.Group, NpgsqlDbType.Text) },
+            { "perform_at", item => new DbValue(item.PerformAt, NpgsqlDbType.TimestampTz) }
+         },
+         ct: ct
+      );
+   }
+
+   public async Task<JobStoreItem?> StartNextJobAsync(CancellationToken ct = default)
+   {
+      var now = _clock.UtcNow;
+      
+      var selectedJob = await _db.Dapper.QueryFirstOrDefaultAsync<JobData>(
+         """
+         UPDATE mvdmio.jobs
+         SET started_at = :now
+         WHERE id = (
+            SELECT id
+            FROM mvdmio.jobs
+            WHERE perform_at <= :now
+              AND started_at IS NULL
+            ORDER BY perform_at ASC, created_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+         )
+         RETURNING id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, completed_at
+         """,
+         new Dictionary<string, object?> {
+            { "now", now }
+         }
+      );
+
+      if (selectedJob is null)
+         return null;
+
+      var jobType = Type.GetType(selectedJob.JobType);
+      var parametersType = Type.GetType(selectedJob.ParametersType);
+      var parameters = JsonSerializer.Deserialize(selectedJob.ParametersJson, parametersType!);
+
+      return new JobStoreItem {
+         JobType = jobType!,
+         Parameters = parameters!,
+         CronExpression = selectedJob.CronExpression is null ? null : CronExpression.Parse(selectedJob.CronExpression),
+         Options = new JobScheduleOptions {
+            JobName = selectedJob.JobName,
+            Group = selectedJob.JobGroup
+         },
+         PerformAt = selectedJob.PerformAt
+      };
+   }
+
+   public async Task FinalizeJobAsync(string jobName, CancellationToken ct = default)
+   {
+      var now = _clock.UtcNow;
+      
+      await _db.Dapper.ExecuteAsync(
+         """
+         UPDATE mvdmio.jobs
+         SET completed_at = :now
+         WHERE id = (
+            SELECT id
+            FROM mvdmio.jobs
+            WHERE job_name = :name
+              AND started_at   IS NOT NULL
+              AND completed_at IS NULL
+            ORDER BY perform_at ASC, created_at ASC
+            LIMIT 1
+         )
+         """,
+         new Dictionary<string, object?> {
+            { "now", now },
+            { "name", jobName }
+         }
+      );
+   }
+}

@@ -16,7 +16,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\mvdmio.ASP.Jobs\mvdmio.ASP.Jobs.csproj"/>
+        <ProjectReference Include="..\..\src\mvdmio.ASP.Jobs\mvdmio.ASP.Jobs.csproj" />
     </ItemGroup>
 
 </Project>

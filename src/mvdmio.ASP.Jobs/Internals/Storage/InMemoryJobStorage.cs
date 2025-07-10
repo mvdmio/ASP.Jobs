@@ -93,13 +93,13 @@ internal sealed class InMemoryJobStorage : IJobStorage
       }
    }
 
-   public async Task FinalizeJobAsync(string jobId, CancellationToken ct = default)
+   public async Task FinalizeJobAsync(string jobName, CancellationToken ct = default)
    {
       await _jobQueueLock.WaitAsync(ct);
 
       try
       {
-         _inProgressJobs.Remove(jobId);
+         _inProgressJobs.Remove(jobName);
       }
       finally
       {
