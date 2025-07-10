@@ -24,13 +24,13 @@ jobs:
           dotnet-version: 9
 
       - name: Restore dependencies
-        run: dotnet restore **/*.csproj
+        run: dotnet restore
 
       - name: Build
-        run: dotnet build **/*.csproj --no-restore
+        run: dotnet build --no-restore
 
       - name: Tests
-        run: dotnet test test/**/*.csproj --no-build --verbosity normal
+        run: dotnet test --no-build --verbosity normal
 
       - name: Push package
         run: nuget push **/*.nupkg -Source 'https://api.nuget.org/v3/index.json' -NonInteractive -SkipDuplicate -Verbosity normal
