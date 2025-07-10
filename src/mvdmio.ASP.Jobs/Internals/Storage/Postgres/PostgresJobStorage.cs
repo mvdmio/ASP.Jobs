@@ -95,20 +95,7 @@ internal sealed class PostgresJobStorage : IJobStorage
       if (selectedJob is null)
          return null;
 
-      var jobType = Type.GetType(selectedJob.JobType);
-      var parametersType = Type.GetType(selectedJob.ParametersType);
-      var parameters = JsonSerializer.Deserialize(selectedJob.ParametersJson, parametersType!);
-
-      return new JobStoreItem {
-         JobType = jobType!,
-         Parameters = parameters!,
-         CronExpression = selectedJob.CronExpression is null ? null : CronExpression.Parse(selectedJob.CronExpression),
-         Options = new JobScheduleOptions {
-            JobName = selectedJob.JobName,
-            Group = selectedJob.JobGroup
-         },
-         PerformAt = selectedJob.PerformAt
-      };
+      return selectedJob.ToJobStoreItem();
    }
 
    public async Task FinalizeJobAsync(string jobName, CancellationToken ct = default)

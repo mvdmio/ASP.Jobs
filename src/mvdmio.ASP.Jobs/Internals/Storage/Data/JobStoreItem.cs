@@ -8,6 +8,6 @@ internal sealed class JobStoreItem
    public required Type JobType { get; init; }
    public required object Parameters { get; init; }
    public required JobScheduleOptions Options { get; init; }
-   public required DateTime PerformAt { get; init; }
+   public required DateTimeOffset PerformAt { get; init; }
    public CronExpression? CronExpression { get; init; }
 }

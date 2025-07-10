@@ -8,6 +8,6 @@ internal class SystemClock : IClock
 
    public static SystemClock Instance => _instance.Value;
 
-   public DateTime UtcNow => DateTime.UtcNow;
-   public DateTime Now => DateTime.Now;
+   public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+   public DateTimeOffset Now => DateTimeOffset.Now;
 }

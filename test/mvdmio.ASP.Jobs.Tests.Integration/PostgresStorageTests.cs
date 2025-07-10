@@ -39,7 +39,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    }
    
    [Fact]
-   public async Task ScheduleJob_Basic()
+   public async Task ScheduleJob_BasicJob()
    {
       // Arrange
       var jobStoreItem = new JobStoreItem {
@@ -59,6 +59,31 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       jobs.Count.Should().Be(1);
       jobs.Should().BeEquivalentTo([jobStoreItem]);
    }
+   
+   [Fact]
+   public async Task ScheduleJob_ComplexJob()
+   {
+      // Arrange
+      var jobStoreItem = new JobStoreItem {
+         JobType = typeof(TestJob),
+         Parameters = new TestJob.Parameters {
+            Delay = 0
+         },
+         Options = new JobScheduleOptions {
+            JobName = "ComplexJob",
+            Group = "ComplexGroup",
+         },
+         PerformAt = _clock.UtcNow
+      };
+      
+      // Act
+      await _storage.ScheduleJobAsync(jobStoreItem, TestContext.Current.CancellationToken);
+      
+      // Assert
+      var jobs = GetJobsFromDatabase();
+      jobs.Count.Should().Be(1);
+      jobs.Should().BeEquivalentTo([jobStoreItem]);
+   } 
 
    private IList<JobStoreItem> GetJobsFromDatabase()
    {

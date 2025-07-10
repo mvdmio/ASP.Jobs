@@ -13,9 +13,9 @@ internal sealed class JobData
    public required string? CronExpression { get; set; }
    public required string JobName { get; set; }
    public required string? JobGroup { get; set; }
-   public required DateTime PerformAt { get; set; }
-   public DateTime? StartedAt { get; set; }
-   public DateTime? CompletedAt { get; set; }
+   public required DateTimeOffset PerformAt { get; set; }
+   public DateTimeOffset? StartedAt { get; set; }
+   public DateTimeOffset? CompletedAt { get; set; }
 
    public static JobData FromJobStoreItem(JobStoreItem jobStoreItem)
    {

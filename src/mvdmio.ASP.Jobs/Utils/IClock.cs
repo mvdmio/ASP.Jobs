@@ -4,6 +4,6 @@ namespace mvdmio.ASP.Jobs.Utils;
 
 internal interface IClock
 {
-   public DateTime UtcNow { get; }
-   public DateTime Now { get; }
+   public DateTimeOffset UtcNow { get; }
+   public DateTimeOffset Now { get; }
 }
