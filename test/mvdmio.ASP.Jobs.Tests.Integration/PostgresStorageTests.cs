@@ -55,12 +55,13 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       await _storage.ScheduleJobAsync(jobStoreItem, TestContext.Current.CancellationToken);
       
       // Assert
-      var jobs = GetJobsFromDatabase().ToList();
+      var jobs = GetJobsFromDatabase();
       jobs.Count.Should().Be(1);
+      jobs.Should().BeEquivalentTo([jobStoreItem]);
    }
 
-   private IList<JobData> GetJobsFromDatabase()
+   private IList<JobStoreItem> GetJobsFromDatabase()
    {
-      return _fixture.DatabaseConnection.Dapper.Query<JobData>("SELECT * FROM mvdmio.jobs").ToList();
+      return _fixture.DatabaseConnection.Dapper.Query<JobData>("SELECT * FROM mvdmio.jobs").Select(x => x.ToJobStoreItem()).ToList();
    }
 }

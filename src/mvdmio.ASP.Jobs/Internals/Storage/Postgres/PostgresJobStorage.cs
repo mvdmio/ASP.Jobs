@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -49,16 +50,18 @@ internal sealed class PostgresJobStorage : IJobStorage
 
    public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
    {
+      var jobData = items.Select(JobData.FromJobStoreItem);
+      
       _ = await _db.Bulk.CopyAsync(
          "mvdmio.jobs",
-         items,
-         new Dictionary<string, Func<JobStoreItem, DbValue>> {
-            { "job_type", item => new DbValue(item.JobType.FullName, NpgsqlDbType.Text) },
-            { "parameters_json", item => new DbValue(JsonSerializer.Serialize(item.Parameters), NpgsqlDbType.Jsonb) },
-            { "parameters_type", item => new DbValue(item.Parameters.GetType().FullName, NpgsqlDbType.Text) },
-            { "cron_expression", item => new DbValue(item.CronExpression?.ToString(), NpgsqlDbType.Text) },
-            { "job_name", item => new DbValue(item.Options.JobName, NpgsqlDbType.Text) },
-            { "job_group", item => new DbValue(item.Options.Group, NpgsqlDbType.Text) },
+         jobData,
+         new Dictionary<string, Func<JobData, DbValue>> {
+            { "job_type", item => new DbValue(item.JobType, NpgsqlDbType.Text) },
+            { "parameters_json", item => new DbValue(item.ParametersJson, NpgsqlDbType.Jsonb) },
+            { "parameters_type", item => new DbValue(item.ParametersType, NpgsqlDbType.Text) },
+            { "cron_expression", item => new DbValue(item.CronExpression, NpgsqlDbType.Text) },
+            { "job_name", item => new DbValue(item.JobName, NpgsqlDbType.Text) },
+            { "job_group", item => new DbValue(item.JobGroup, NpgsqlDbType.Text) },
             { "perform_at", item => new DbValue(item.PerformAt, NpgsqlDbType.TimestampTz) }
          },
          ct: ct
