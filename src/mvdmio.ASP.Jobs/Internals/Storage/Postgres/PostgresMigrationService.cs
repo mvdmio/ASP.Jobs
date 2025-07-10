@@ -23,8 +23,7 @@ internal sealed class PostgresMigrationService : IHostedService
    {
       try
       {
-         var dbConnection = new DatabaseConnection(_configuration.ConnectionString);
-         var migrationRunner = new DatabaseMigrator(dbConnection, GetType().Assembly);
+         var migrationRunner = new DatabaseMigrator(_configuration.DatabaseConnection, GetType().Assembly);
 
          await migrationRunner.MigrateDatabaseToLatestAsync(cancellationToken);
       }

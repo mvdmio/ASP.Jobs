@@ -5,6 +5,7 @@ using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Utils;
+using mvdmio.Database.PgSQL;
 
 namespace mvdmio.ASP.Jobs;
 
@@ -35,11 +36,15 @@ public class JobRunnerConfiguration
    }
 
    /// <summary>
-   ///    Use <see cref="PostgresJobStorageConfiguration" /> as the job storage.
+   ///    Use <see cref="PostgresJobStorage" /> as the job storage and use the given connection string to connect to the database.
    /// </summary>
-   public void UsePostgresStorage(PostgresJobStorageConfiguration configuration)
+   public void UsePostgresStorage(string connectionString)
    {
-      JobStorage = new PostgresJobStorage(configuration, new SystemClock());
+      var postgresConfiguration = new PostgresJobStorageConfiguration {
+         DatabaseConnection = new DatabaseConnectionFactory().ForConnectionString(connectionString)
+      };
+      
+      JobStorage = new PostgresJobStorage(postgresConfiguration, new SystemClock());
    }
 
    internal void SetupServices(IServiceCollection services)

@@ -22,9 +22,9 @@ namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 public sealed class PostgresJobStorageConfiguration
 {
    /// <summary>
-   ///    The connection string to the Postgres database.
+   ///    The database connection to use for the job storage.
    /// </summary>
-   public required string ConnectionString { get; set; }
+   public required DatabaseConnection DatabaseConnection { get; set; }
 }
 
 internal sealed class PostgresJobStorage : IJobStorage
@@ -39,7 +39,7 @@ internal sealed class PostgresJobStorage : IJobStorage
       Configuration = configuration;
       
       _clock = clock;
-      _db = new DatabaseConnection(configuration.ConnectionString);
+      _db = configuration.DatabaseConnection;
    }
 
    public Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default)
