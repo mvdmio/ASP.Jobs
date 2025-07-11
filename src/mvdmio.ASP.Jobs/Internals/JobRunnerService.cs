@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
+using mvdmio.ASP.Jobs.Internals.Tasks;
 using Serilog;
 
 namespace mvdmio.ASP.Jobs.Internals;
@@ -29,12 +29,15 @@ internal class JobRunnerService : BackgroundService
 
    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
    {
-      var runningTasks = Enumerable.Range(0, Configuration.MaxConcurrentJobs).Select(_ => PerformAvailableJobsAsync(stoppingToken));
+      var oldContext = SynchronizationContext.Current;
 
       try
       {
-         // Wait for all running threads to complete before exiting.
-         await Task.WhenAll(runningTasks);
+         using var scheduler = new JobTaskScheduler(Configuration.JobRunnerThreadsCount);
+
+         SynchronizationContext.SetSynchronizationContext(new JobSchedulerSynchronizationContext(scheduler));
+
+         await StartTask(() => PerformAvailableJobsAsync(scheduler, stoppingToken), scheduler, stoppingToken);
       }
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {
@@ -44,15 +47,19 @@ internal class JobRunnerService : BackgroundService
       {
          Log.Error(ex, "Error while executing job runner threads");
       }
+      finally
+      {
+         SynchronizationContext.SetSynchronizationContext(oldContext);
+      }
    }
 
-   private async Task PerformAvailableJobsAsync(CancellationToken cancellationToken)
+   private async Task PerformAvailableJobsAsync(JobTaskScheduler scheduler, CancellationToken cancellationToken)
    {
       while (!cancellationToken.IsCancellationRequested)
       {
          try
          {
-            await PerformNextJobAsync(cancellationToken);
+            await StartTask(() => PerformNextJobAsync(scheduler, cancellationToken), scheduler, cancellationToken);
          }
          catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
          {
@@ -65,7 +72,7 @@ internal class JobRunnerService : BackgroundService
       }
    }
 
-   private async Task PerformNextJobAsync(CancellationToken cancellationToken)
+   private async Task PerformNextJobAsync(JobTaskScheduler scheduler, CancellationToken cancellationToken)
    {
       var jobBusItem = await _jobStorage.StartNextJobAsync(cancellationToken);
       if (jobBusItem is null)
@@ -74,33 +81,17 @@ internal class JobRunnerService : BackgroundService
          return;
       }
 
-      try
-      {
-         using var scope = _services.CreateScope();
-         var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
-
-         await PerformJob(job, jobBusItem, cancellationToken);
-      }
-      finally
-      {
-         try
-         {
-            await _jobStorage.FinalizeJobAsync(jobBusItem.Options.JobName, cancellationToken);
-
-            if (jobBusItem.CronExpression is not null)
-               await ScheduleNextOccurrence(jobBusItem, cancellationToken);
-         }
-         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-         {
-            // Ignore cancellation exceptions; they are expected when the service is stopped.
-         }
-      }
+      // Do not await this task, otherwise only one job will run at a time.
+      _ = StartTask(() => PerformJob(jobBusItem, cancellationToken), scheduler, cancellationToken);
    }
 
-   private static async Task PerformJob(IJob job, JobStoreItem jobBusItem, CancellationToken cancellationToken)
+   private async Task PerformJob(JobStoreItem jobBusItem, CancellationToken cancellationToken)
    {
       var startTime = Stopwatch.GetTimestamp();
 
+      using var scope = _services.CreateScope();
+      var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
+      
       try
       {
          Log.Information("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
@@ -118,8 +109,22 @@ internal class JobRunnerService : BackgroundService
       }
       catch (Exception e)
       {
-         Log.Error(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Namespace, jobBusItem.Parameters);
+         Log.Error(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
          await job.OnJobFailedAsync(jobBusItem.Parameters, e, cancellationToken);
+      }
+      finally
+      {
+         try
+         {
+            await _jobStorage.FinalizeJobAsync(jobBusItem.Options.JobName, cancellationToken);
+
+            if (jobBusItem.CronExpression is not null)
+               await ScheduleNextOccurrence(jobBusItem, cancellationToken);
+         }
+         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+         {
+            // Ignore cancellation exceptions; they are expected when the service is stopped.
+         }
       }
    }
 
@@ -140,5 +145,10 @@ internal class JobRunnerService : BackgroundService
       };
 
       await _jobStorage.ScheduleJobAsync(newJobItem, ct);
+   }
+
+   private static Task StartTask(Func<Task> asyncAction, JobTaskScheduler scheduler, CancellationToken ct)
+   {
+      return Task.Factory.StartNew(async () => await asyncAction.Invoke(), ct, TaskCreationOptions.None, scheduler);
    }
 }

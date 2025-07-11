@@ -6,7 +6,8 @@
 public class JobConfiguration
 {
    /// <summary>
-   ///    The maximum number of jobs that can be executed concurrently. Default is 5.
+   ///    The maximum number of threads that run jobs. Default is 5.
+   ///    Note that the number of jobs started can be higher that this value if there is a lot of I/O bound work involved.
    /// </summary>
-   public int MaxConcurrentJobs { get; init; } = 5;
+   public int JobRunnerThreadsCount { get; init; } = 5;
 }
