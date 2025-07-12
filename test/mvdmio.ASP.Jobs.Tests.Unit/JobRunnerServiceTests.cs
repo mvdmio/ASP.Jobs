@@ -1,4 +1,5 @@
-﻿using AwesomeAssertions;
+﻿using System.Diagnostics;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals;
@@ -8,7 +9,7 @@ using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Unit;
 
-public sealed class JobRunnerServiceTests : IAsyncLifetime
+public sealed class JobRunnerServiceTests
 {
    private readonly InMemoryJobStorage _jobStorage;
    private readonly Random _random;
@@ -31,16 +32,6 @@ public sealed class JobRunnerServiceTests : IAsyncLifetime
       _runner = new JobRunnerService(services.BuildServiceProvider(), _jobStorage, Options.Create(configuration));
    }
 
-   public async ValueTask InitializeAsync()
-   {
-      await _runner.StartAsync(CancellationToken);
-   }
-
-   public async ValueTask DisposeAsync()
-   {
-      await _runner.StopAsync(CancellationToken);
-   }
-
    [Fact]
    public async Task RunSingleJob()
    {
@@ -48,11 +39,12 @@ public sealed class JobRunnerServiceTests : IAsyncLifetime
       var job1 = await ScheduleTestJobAsync();
 
       // Act
-      await job1.Complete();
-
+      await RunJobs(async () => {
+            await job1.Complete();
+         }
+      );
+      
       // Assert
-      await _jobStorage.WaitForAllJobsFinishedAsync(CancellationToken);
-
       AssertExecuted(job1);
    }
 
@@ -64,12 +56,13 @@ public sealed class JobRunnerServiceTests : IAsyncLifetime
       var job2 = await ScheduleTestJobAsync();
 
       // Act
-      await job1.Complete();
-      await job2.Complete();
+      await RunJobs(async () => {
+            await job1.Complete();
+            await job2.Complete();
+         }
+      );
 
       // Assert
-      await _jobStorage.WaitForAllJobsFinishedAsync(CancellationToken);
-
       AssertExecuted(job1);
       AssertExecuted(job2);
    }
@@ -82,12 +75,13 @@ public sealed class JobRunnerServiceTests : IAsyncLifetime
       var job2 = await ScheduleTestJobAsync();
 
       // Act
-      await job1.Crash(new Exception("Crashed job test"));
-      await job2.Complete();
+      await RunJobs(async () => {
+            await job1.Crash(new Exception("Crashed job test"));
+            await job2.Complete();
+         }
+      );
 
       // Assert
-      await _jobStorage.WaitForAllJobsFinishedAsync(CancellationToken);
-
       AssertCrashed(job1);
       AssertExecuted(job2);
    }
@@ -108,20 +102,21 @@ public sealed class JobRunnerServiceTests : IAsyncLifetime
       var job10 = await ScheduleTestJobAsync();
 
       // Act
-      await job1.Complete();
-      await job2.Complete();
-      await job3.Complete();
-      await job4.Complete();
-      await job5.Complete();
-      await job6.Complete();
-      await job7.Complete();
-      await job8.Complete();
-      await job9.Complete();
-      await job10.Complete();
-
+      await RunJobs(async () => {
+            await job1.Complete();
+            await job2.Complete();
+            await job3.Complete();
+            await job4.Complete();
+            await job5.Complete();
+            await job6.Complete();
+            await job7.Complete();
+            await job8.Complete();
+            await job9.Complete();
+            await job10.Complete();
+         }
+      );
+      
       // Assert
-      await _jobStorage.WaitForAllJobsFinishedAsync(CancellationToken);
-
       AssertExecuted(job1);
       AssertExecuted(job2);
       AssertExecuted(job3);
@@ -134,6 +129,29 @@ public sealed class JobRunnerServiceTests : IAsyncLifetime
       AssertExecuted(job10);
    }
 
+   [Fact]
+   public async Task HandleManyJobsInParallel()
+   {
+      // Arrange
+      var jobs = new List<TestJob.Parameters>();
+      for (var i = 0; i < 1000; i++)
+      {
+         jobs.Add(await ScheduleTestJobAsync(1));
+      }
+
+      // Act
+      var executionTime = await RunJobs(async () => {
+         var tasks = jobs.Select(job => job.Complete()).ToArray();
+         await Task.WhenAll(tasks);
+      });
+      
+      // Assert
+      jobs.ForEach(AssertExecuted);
+      
+      var totalDelay = jobs.Sum(job => job.Delay);
+      executionTime.Should().BeLessThan(TimeSpan.FromMilliseconds(totalDelay / 4), "all jobs should be executed in parallel within a quarter of the execution time of all jobs");
+   }
+   
    private async Task<TestJob.Parameters> ScheduleTestJobAsync(int? delay = null)
    {
       delay ??= _random.Next(1, 10);
@@ -146,6 +164,18 @@ public sealed class JobRunnerServiceTests : IAsyncLifetime
       return parameters;
    }
 
+   private async Task<TimeSpan> RunJobs(Func<Task> runFunc)
+   {
+      var startTime = Stopwatch.GetTimestamp();
+      
+      await _runner.StartAsync(CancellationToken);
+      await runFunc.Invoke();
+      await _jobStorage.WaitForAllJobsFinishedAsync(CancellationToken);
+      await _runner.StopAsync(CancellationToken);
+      
+      return Stopwatch.GetElapsedTime(startTime);
+   }
+   
    private static void AssertExecuted(TestJob.Parameters job)
    {
       job.Should()
