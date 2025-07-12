@@ -70,8 +70,8 @@ internal sealed class JobTaskScheduler : TaskScheduler, IDisposable
 
    protected override void QueueTask(Task task)
    {
-      if(_cts.IsCancellationRequested)
-         return; // Do not queue tasks if cancellation is requested
+      // You MUST enqueue the task here, otherwise the awaits on the task will never complete, resulting in deadlocks.
+      // Do NOT return when the Cancellation is requested on _cts.
       
       _tasks.Enqueue(task);
    }
