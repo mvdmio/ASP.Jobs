@@ -11,7 +11,7 @@ using Serilog;
 
 namespace mvdmio.ASP.Jobs.Internals;
 
-internal class JobScheduler : IJobScheduler
+internal sealed class JobScheduler : IJobScheduler
 {
    private readonly IJobStorage _jobStorage;
    private readonly IServiceProvider _services;

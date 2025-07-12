@@ -7,14 +7,14 @@ using System.Threading.Tasks;
 
 namespace mvdmio.ASP.Jobs.Internals.Tasks;
 
-internal sealed class JobTaskScheduler : TaskScheduler, IDisposable
+internal sealed class ThreadLimitedTaskScheduler : TaskScheduler, IDisposable
 {
    private readonly CancellationTokenSource _cts = new CancellationTokenSource();
    private readonly ConcurrentQueue<Task> _tasks = new ConcurrentQueue<Task>();
    
    private readonly List<Thread> _threads;
    
-   public JobTaskScheduler(int numberOfThreads)
+   public ThreadLimitedTaskScheduler(int numberOfThreads)
    {
       if (numberOfThreads < 1)
          throw new ArgumentOutOfRangeException(nameof(numberOfThreads));

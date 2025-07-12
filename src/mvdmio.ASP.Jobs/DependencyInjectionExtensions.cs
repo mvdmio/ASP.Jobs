@@ -1,6 +1,7 @@
 ﻿using System;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Trace;
 
 namespace mvdmio.ASP.Jobs;
 
@@ -30,5 +31,14 @@ public static class DependencyInjectionExtensions
    {
       services.AddScoped<TJob>(); // So that you can inject the implementation directly into some classes.
       services.AddScoped<IJob, TJob>(); // So that you can inject a list if implementations into some classes.
+   }
+   
+   /// <summary>
+   ///   Add the job activity source to the OpenTelemetry tracing.
+   /// </summary>
+   public static void AddJobs(this TracerProviderBuilder builder)
+   {
+      // Add the job activity source to the OpenTelemetry tracing.
+      builder.AddSource("mvdmio.ASP.Jobs");
    }
 }

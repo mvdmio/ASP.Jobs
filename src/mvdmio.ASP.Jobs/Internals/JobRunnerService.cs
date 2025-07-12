@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,12 +13,17 @@ using Serilog;
 
 namespace mvdmio.ASP.Jobs.Internals;
 
-internal class JobRunnerService : BackgroundService
+internal sealed class JobRunnerService : BackgroundService
 {
+   // OpenTelemetry tracing setup
+   private static readonly ActivitySource _activitySource = new("mvdmio.ASP.Jobs");
+   
    private readonly IJobStorage _jobStorage;
    private readonly IOptions<JobConfiguration> _options;
    private readonly IServiceProvider _services;
 
+   private ThreadLimitedTaskScheduler _scheduler = null!;
+   
    private JobConfiguration Configuration => _options.Value;
 
    public JobRunnerService(IServiceProvider services, IJobStorage jobStorage, IOptions<JobConfiguration> options)
@@ -33,11 +39,11 @@ internal class JobRunnerService : BackgroundService
 
       try
       {
-         using var scheduler = new JobTaskScheduler(Configuration.JobRunnerThreadsCount);
+         // Make sure the jobs are run on a custom task scheduler that limits the number of threads but still allows for parallel task execution while threads are waiting on async I/O.
+         _scheduler = new ThreadLimitedTaskScheduler(Configuration.JobRunnerThreadsCount);
+         SynchronizationContext.SetSynchronizationContext(new JobSchedulerSynchronizationContext(_scheduler));
 
-         SynchronizationContext.SetSynchronizationContext(new JobSchedulerSynchronizationContext(scheduler));
-
-         await StartTask(() => PerformAvailableJobsAsync(scheduler, stoppingToken), scheduler, stoppingToken);
+         await RunOnJobScheduler(() => PerformAvailableJobsAsync(stoppingToken), stoppingToken);
       }
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {
@@ -49,17 +55,19 @@ internal class JobRunnerService : BackgroundService
       }
       finally
       {
+         // Dispose the task scheduler to ensure all threads are stopped gracefully.
+         _scheduler.Dispose();
          SynchronizationContext.SetSynchronizationContext(oldContext);
       }
    }
 
-   private async Task PerformAvailableJobsAsync(JobTaskScheduler scheduler, CancellationToken cancellationToken)
+   private async Task PerformAvailableJobsAsync(CancellationToken cancellationToken)
    {
       while (!cancellationToken.IsCancellationRequested)
       {
          try
          {
-            await StartTask(() => PerformNextJobAsync(scheduler, cancellationToken), scheduler, cancellationToken);
+            await RunOnJobScheduler(() => PerformNextJobAsync(cancellationToken), cancellationToken);
          }
          catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
          {
@@ -72,7 +80,7 @@ internal class JobRunnerService : BackgroundService
       }
    }
 
-   private async Task PerformNextJobAsync(JobTaskScheduler scheduler, CancellationToken cancellationToken)
+   private async Task PerformNextJobAsync(CancellationToken cancellationToken)
    {
       var jobBusItem = await _jobStorage.StartNextJobAsync(cancellationToken);
       if (jobBusItem is null)
@@ -82,7 +90,8 @@ internal class JobRunnerService : BackgroundService
       }
 
       // Do not await this task, otherwise only one job will run at a time.
-      _ = StartTask(() => PerformJob(jobBusItem, cancellationToken), scheduler, cancellationToken);
+      // The TaskScheduler will handle concurrency and ensure all tasks are completed before the service stops.
+      _ = RunOnJobScheduler(() => PerformJob(jobBusItem, cancellationToken), cancellationToken);
    }
 
    private async Task PerformJob(JobStoreItem jobBusItem, CancellationToken cancellationToken)
@@ -92,13 +101,22 @@ internal class JobRunnerService : BackgroundService
       using var scope = _services.CreateScope();
       var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
       
+      // OpenTelemetry tracing
+      using var activity = _activitySource.StartActivity();
+      activity?.SetTag("job.type", jobBusItem.JobType.Name);
+      activity?.SetTag("job.name", jobBusItem.Options.JobName);
+      
       try
       {
          Log.Information("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
-
+         activity?.AddEvent(new ActivityEvent("Job Started"));
+         
          await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
          await job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken);
 
+         activity?.AddEvent(new ActivityEvent("Job Completed"));
+         activity?.SetStatus(ActivityStatusCode.Ok, "Job completed successfully");
+         
          var endTime = Stopwatch.GetTimestamp();
          var duration = new TimeSpan(endTime - startTime);
          Log.Information("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
@@ -106,10 +124,15 @@ internal class JobRunnerService : BackgroundService
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {
          // Ignore cancellation exceptions; they are expected when the service is stopped.
+         activity?.AddEvent(new ActivityEvent("Job Canceled"));
       }
       catch (Exception e)
       {
          Log.Error(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+         
+         activity?.AddException(e);
+         activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
+         
          await job.OnJobFailedAsync(jobBusItem.Parameters, e, cancellationToken);
       }
       finally
@@ -148,8 +171,8 @@ internal class JobRunnerService : BackgroundService
       await _jobStorage.ScheduleJobAsync(newJobItem, ct);
    }
 
-   private static Task StartTask(Func<Task> asyncAction, JobTaskScheduler scheduler, CancellationToken ct)
+   private Task RunOnJobScheduler(Func<Task> asyncAction, CancellationToken ct)
    {
-      return Task.Factory.StartNew(async () => await asyncAction.Invoke(), ct, TaskCreationOptions.None, scheduler);
+      return Task.Factory.StartNew(async () => await asyncAction.Invoke(), ct, TaskCreationOptions.None, _scheduler);
    }
 }
