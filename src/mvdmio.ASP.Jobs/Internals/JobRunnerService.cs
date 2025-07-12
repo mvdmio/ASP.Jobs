@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -102,9 +101,15 @@ internal sealed class JobRunnerService : BackgroundService
       var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
       
       // OpenTelemetry tracing
-      using var activity = _activitySource.StartActivity();
-      activity?.SetTag("job.type", jobBusItem.JobType.Name);
+      using var activity = _activitySource.StartActivity("Job", ActivityKind.Internal, null);
+      if(activity is not null)
+         activity.DisplayName = $"Job: {jobBusItem.JobType.Name}";
+      
+      activity?.SetTag("job.type", jobBusItem.JobType.AssemblyQualifiedName);
       activity?.SetTag("job.name", jobBusItem.Options.JobName);
+      activity?.SetTag("job.group", jobBusItem.Options.Group);
+      activity?.SetTag("job.parameters", jobBusItem.Parameters);
+      activity?.SetTag("job.cron", jobBusItem.CronExpression?.ToString());
       
       try
       {
