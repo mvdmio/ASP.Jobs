@@ -141,7 +141,8 @@ internal class JobRunnerService : BackgroundService
          JobType = jobItem.JobType,
          PerformAt = nextOccurrence.Value,
          Parameters = jobItem.Parameters,
-         Options = jobItem.Options
+         Options = jobItem.Options,
+         CronExpression = jobItem.CronExpression
       };
 
       await _jobStorage.ScheduleJobAsync(newJobItem, ct);

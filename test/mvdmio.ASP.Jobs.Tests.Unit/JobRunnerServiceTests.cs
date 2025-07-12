@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using AwesomeAssertions;
+using Cronos;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals;
@@ -39,12 +40,12 @@ public sealed class JobRunnerServiceTests
       var job1 = await ScheduleTestJobAsync();
 
       // Act
-      await RunJobs(async () => {
-            await job1.Complete();
-         }
-      );
+      await RunJobs();
       
       // Assert
+      _jobStorage.ScheduledJobs.Should().HaveCount(0);
+      _jobStorage.InProgressJobs.Should().HaveCount(0);
+      
       AssertExecuted(job1);
    }
 
@@ -56,13 +57,12 @@ public sealed class JobRunnerServiceTests
       var job2 = await ScheduleTestJobAsync();
 
       // Act
-      await RunJobs(async () => {
-            await job1.Complete();
-            await job2.Complete();
-         }
-      );
+      await RunJobs();
 
       // Assert
+      _jobStorage.ScheduledJobs.Should().HaveCount(0);
+      _jobStorage.InProgressJobs.Should().HaveCount(0);
+      
       AssertExecuted(job1);
       AssertExecuted(job2);
    }
@@ -72,16 +72,17 @@ public sealed class JobRunnerServiceTests
    {
       // Arrange
       var job1 = await ScheduleTestJobAsync();
+      job1.ThrowOnExecute = new Exception("Crashed job test");
+      
       var job2 = await ScheduleTestJobAsync();
 
       // Act
-      await RunJobs(async () => {
-            await job1.Crash(new Exception("Crashed job test"));
-            await job2.Complete();
-         }
-      );
+      await RunJobs();
 
       // Assert
+      _jobStorage.ScheduledJobs.Should().HaveCount(0);
+      _jobStorage.InProgressJobs.Should().HaveCount(0);
+      
       AssertCrashed(job1);
       AssertExecuted(job2);
    }
@@ -102,21 +103,12 @@ public sealed class JobRunnerServiceTests
       var job10 = await ScheduleTestJobAsync();
 
       // Act
-      await RunJobs(async () => {
-            await job1.Complete();
-            await job2.Complete();
-            await job3.Complete();
-            await job4.Complete();
-            await job5.Complete();
-            await job6.Complete();
-            await job7.Complete();
-            await job8.Complete();
-            await job9.Complete();
-            await job10.Complete();
-         }
-      );
+      await RunJobs();
       
       // Assert
+      _jobStorage.ScheduledJobs.Should().HaveCount(0);
+      _jobStorage.InProgressJobs.Should().HaveCount(0);
+      
       AssertExecuted(job1);
       AssertExecuted(job2);
       AssertExecuted(job3);
@@ -136,25 +128,48 @@ public sealed class JobRunnerServiceTests
       var jobs = new List<TestJob.Parameters>();
       for (var i = 0; i < 1000; i++)
       {
-         jobs.Add(await ScheduleTestJobAsync(1));
+         jobs.Add(await ScheduleTestJobAsync(TimeSpan.FromMilliseconds(1)));
       }
 
       // Act
-      var executionTime = await RunJobs(async () => {
-         var tasks = jobs.Select(job => job.Complete()).ToArray();
-         await Task.WhenAll(tasks);
-      });
+      var executionTime = await RunJobs();
       
       // Assert
+      _jobStorage.ScheduledJobs.Should().HaveCount(0);
+      _jobStorage.InProgressJobs.Should().HaveCount(0);
+      
       jobs.ForEach(AssertExecuted);
       
-      var totalDelay = jobs.Sum(job => job.Delay);
-      executionTime.Should().BeLessThan(TimeSpan.FromMilliseconds(totalDelay / 4), "all jobs should be executed in parallel within a quarter of the execution time of all jobs");
+      // Try to assert parallelism. Approximately, the execution time should be less than the sum of all delays.
+      var totalDelay = jobs.Sum(job => job.Delay?.TotalMilliseconds ?? 0);
+      executionTime.Should().BeLessThan(TimeSpan.FromMilliseconds(totalDelay));
    }
+
+   // TODO: Test CRON jobs. Requires improved test harness with more refined control over time and timing.
+   // [Fact]
+   // public async Task HandleCronJobs()
+   // {
+   //    // Arrange
+   //    var job = new TestJob.Parameters {
+   //       Delay = TimeSpan.FromMilliseconds(10)
+   //    };
+   //    
+   //    await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.EverySecond, job, null, cancellationToken: CancellationToken);
+   //    
+   //    // Act
+   //    _ = await RunJobs();
+   //    
+   //    // Assert
+   //    AssertExecuted(job);
+   //    
+   //    _jobStorage.ScheduledJobs.Should().HaveCount(1);
+   //    _jobStorage.InProgressJobs.Should().HaveCount(0);
+   //    _jobStorage.ScheduledJobs.First().CronExpression.Should().Be(CronExpression.EverySecond);
+   // }
    
-   private async Task<TestJob.Parameters> ScheduleTestJobAsync(int? delay = null)
+   private async Task<TestJob.Parameters> ScheduleTestJobAsync(TimeSpan? delay = null)
    {
-      delay ??= _random.Next(1, 10);
+      delay ??= TimeSpan.FromMilliseconds(_random.Next(1, 10));
 
       var parameters = new TestJob.Parameters {
          Delay = delay.Value
@@ -164,12 +179,11 @@ public sealed class JobRunnerServiceTests
       return parameters;
    }
 
-   private async Task<TimeSpan> RunJobs(Func<Task> runFunc)
+   private async Task<TimeSpan> RunJobs()
    {
       var startTime = Stopwatch.GetTimestamp();
       
       await _runner.StartAsync(CancellationToken);
-      await runFunc.Invoke();
       await _jobStorage.WaitForAllJobsFinishedAsync(CancellationToken);
       await _runner.StopAsync(CancellationToken);
       

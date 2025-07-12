@@ -4,11 +4,9 @@ public class TestJob : Job<TestJob.Parameters>
 {
    public override async Task ExecuteAsync(Parameters properties, CancellationToken cancellationToken)
    {
-      while (properties.Cts.IsCancellationRequested == false)
-      {
-         await Task.Delay(1, cancellationToken);
-      }
-
+      if(properties.Delay.HasValue)
+         await Task.Delay(properties.Delay.Value, cancellationToken);
+      
       if (properties.ThrowOnExecute is not null)
          throw properties.ThrowOnExecute;
    }
@@ -27,25 +25,10 @@ public class TestJob : Job<TestJob.Parameters>
 
    public class Parameters
    {
-      public required int Delay { get; set; }
-
-      internal CancellationTokenSource Cts { get; } = new();
+      public TimeSpan? Delay { get; set; }
       public Exception? ThrowOnExecute { get; set; }
+      
       public bool Executed { get; set; }
       public bool Crashed { get; set; }
-
-      public async Task Complete()
-      {
-         if (Delay > 0)
-            await Task.Delay(Delay, Cts.Token);
-
-         await Cts.CancelAsync();
-      }
-
-      public async Task Crash(Exception ex)
-      {
-         ThrowOnExecute = ex;
-         await Complete();
-      }
    }
 }

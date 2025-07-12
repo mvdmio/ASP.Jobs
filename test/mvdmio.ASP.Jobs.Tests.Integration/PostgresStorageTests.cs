@@ -45,7 +45,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       var jobStoreItem = new JobStoreItem {
          JobType = typeof(TestJob),
          Parameters = new TestJob.Parameters {
-            Delay = 0
+            Delay = TimeSpan.Zero
          },
          Options = new JobScheduleOptions(),
          PerformAt = _clock.UtcNow
@@ -67,7 +67,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       var jobStoreItem = new JobStoreItem {
          JobType = typeof(TestJob),
          Parameters = new TestJob.Parameters {
-            Delay = 0
+            Delay = TimeSpan.Zero
          },
          Options = new JobScheduleOptions {
             JobName = "ComplexJob",
