@@ -101,27 +101,28 @@ internal sealed class JobRunnerService : BackgroundService
       var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
       
       // OpenTelemetry tracing
-      using var activity = _activitySource.StartActivity("Job", ActivityKind.Internal, null);
-      if(activity is not null)
+      using var activity = _activitySource.StartActivity();
+
+      if (activity is not null)
          activity.DisplayName = $"Job: {jobBusItem.JobType.Name}";
-      
+
       activity?.SetTag("job.type", jobBusItem.JobType.AssemblyQualifiedName);
       activity?.SetTag("job.name", jobBusItem.Options.JobName);
       activity?.SetTag("job.group", jobBusItem.Options.Group);
       activity?.SetTag("job.parameters", jobBusItem.Parameters);
       activity?.SetTag("job.cron", jobBusItem.CronExpression?.ToString());
-      
+
       try
       {
          Log.Information("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
          activity?.AddEvent(new ActivityEvent("Job Started"));
-         
+
          await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
          await job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken);
 
          activity?.AddEvent(new ActivityEvent("Job Completed"));
          activity?.SetStatus(ActivityStatusCode.Ok, "Job completed successfully");
-         
+
          var endTime = Stopwatch.GetTimestamp();
          var duration = new TimeSpan(endTime - startTime);
          Log.Information("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
@@ -134,10 +135,10 @@ internal sealed class JobRunnerService : BackgroundService
       catch (Exception e)
       {
          Log.Error(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
-         
+
          activity?.AddException(e);
          activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
-         
+
          await job.OnJobFailedAsync(jobBusItem.Parameters, e, cancellationToken);
       }
       finally
