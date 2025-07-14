@@ -201,13 +201,18 @@ internal sealed class JobScheduler : IJobScheduler
          var job = GetJobFromDi<TJob, TParameters>();
          await job.OnJobScheduledAsync(parameters, cancellationToken);
 
+         var scheduleOptions = options ?? new JobScheduleOptions();
+         
+         // CRON jobs may not be scheduled twice.
+         scheduleOptions.JobName = $"cron_{typeof(TJob).Name}";
+         
          if (runImmediately)
          {
             var jobItem = new JobStoreItem {
                JobType = typeof(TJob),
                PerformAt = DateTime.UtcNow,
                Parameters = parameters,
-               Options = options ?? new JobScheduleOptions(),
+               Options = scheduleOptions,
                CronExpression = cronExpression
             };
 
@@ -223,7 +228,7 @@ internal sealed class JobScheduler : IJobScheduler
                JobType = typeof(TJob),
                PerformAt = nextOccurence.Value,
                Parameters = parameters,
-               Options = options ?? new JobScheduleOptions(),
+               Options = scheduleOptions,
                CronExpression = cronExpression
             };
 
