@@ -51,12 +51,12 @@ public class JobRunnerConfiguration
    {
       if (JobStorage is null or InMemoryJobStorage)
       {
-         services.AddSingleton(JobStorage ?? new InMemoryJobStorage());   
+         services.AddSingleton<IJobStorage>(JobStorage ?? new InMemoryJobStorage());   
       }
       else if (JobStorage is PostgresJobStorage postgres)
       {
-         services.AddSingleton(postgres);
-         services.AddSingleton(postgres.Configuration);
+         services.AddSingleton<IJobStorage>(postgres);
+         services.AddSingleton<PostgresJobStorageConfiguration>(postgres.Configuration);
          services.AddHostedService<PostgresMigrationService>();
       }
 
