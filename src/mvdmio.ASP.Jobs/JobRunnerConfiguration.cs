@@ -59,7 +59,6 @@ public class JobRunnerConfiguration
       {
          services.AddSingleton<IJobStorage>(postgres);
          services.AddSingleton<PostgresJobStorageConfiguration>(postgres.Configuration);
-         services.AddHostedService<PostgresMigrationService>();
       }
 
       if (IsSchedulerEnabled)
