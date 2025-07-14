@@ -49,6 +49,8 @@ public class JobRunnerConfiguration
 
    internal void SetupServices(IServiceCollection services)
    {
+      services.AddSingleton<IClock>(SystemClock.Instance);
+      
       if (JobStorage is null or InMemoryJobStorage)
       {
          services.AddSingleton<IJobStorage>(JobStorage ?? new InMemoryJobStorage());   
