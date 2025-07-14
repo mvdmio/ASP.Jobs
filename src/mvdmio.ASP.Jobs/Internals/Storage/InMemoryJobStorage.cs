@@ -13,9 +13,9 @@ namespace mvdmio.ASP.Jobs.Internals.Storage;
 internal sealed class InMemoryJobStorage : IJobStorage
 {
    private readonly IClock _clock;
-   private readonly IDictionary<string, JobStoreItem> _inProgressJobs = new Dictionary<string, JobStoreItem>();
    private readonly SemaphoreSlim _jobQueueLock = new(1, 1);
    private readonly IDictionary<string, JobStoreItem> _scheduledJobs = new Dictionary<string, JobStoreItem>();
+   private readonly IDictionary<Guid, JobStoreItem> _inProgressJobs = new Dictionary<Guid, JobStoreItem>();
 
    internal IEnumerable<JobStoreItem> ScheduledJobs => _scheduledJobs.Values;
    internal IEnumerable<JobStoreItem> InProgressJobs => _inProgressJobs.Values;
@@ -78,7 +78,7 @@ internal sealed class InMemoryJobStorage : IJobStorage
             return null;
 
          _scheduledJobs.Remove(job.Options.JobName);
-         _inProgressJobs[job.Options.JobName] = job;
+         _inProgressJobs[job.JobId] = job;
 
          return job;
       }
@@ -93,13 +93,13 @@ internal sealed class InMemoryJobStorage : IJobStorage
       }
    }
 
-   public async Task FinalizeJobAsync(string jobName, CancellationToken ct = default)
+   public async Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default)
    {
       await _jobQueueLock.WaitAsync(ct);
 
       try
       {
-         _inProgressJobs.Remove(jobName);
+         _inProgressJobs.Remove(job.JobId);
       }
       finally
       {

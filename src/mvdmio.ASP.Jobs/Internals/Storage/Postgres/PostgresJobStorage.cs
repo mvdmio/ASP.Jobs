@@ -1,16 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Cronos;
 using JetBrains.Annotations;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Utils;
 using mvdmio.Database.PgSQL;
+using mvdmio.Database.PgSQL.Connectors;
 using mvdmio.Database.PgSQL.Models;
 using NpgsqlTypes;
 
@@ -52,10 +51,15 @@ internal sealed class PostgresJobStorage : IJobStorage
    {
       var jobData = items.Select(JobData.FromJobStoreItem);
       
-      _ = await _db.Bulk.CopyAsync(
+      await _db.Bulk.UpsertAsync(
          "mvdmio.jobs",
+         new UpsertConfiguration {
+            OnConflictColumns = [ "job_name" ],
+            OnConflictWhereClause = "started_at IS NULL", 
+         },
          jobData,
          new Dictionary<string, Func<JobData, DbValue>> {
+            { "id", item => new DbValue(item.Id, NpgsqlDbType.Uuid) },
             { "job_type", item => new DbValue(item.JobType, NpgsqlDbType.Text) },
             { "parameters_json", item => new DbValue(item.ParametersJson, NpgsqlDbType.Jsonb) },
             { "parameters_type", item => new DbValue(item.ParametersType, NpgsqlDbType.Text) },
@@ -98,7 +102,7 @@ internal sealed class PostgresJobStorage : IJobStorage
       return selectedJob.ToJobStoreItem();
    }
 
-   public async Task FinalizeJobAsync(string jobName, CancellationToken ct = default)
+   public async Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default)
    {
       var now = _clock.UtcNow;
       
@@ -106,19 +110,11 @@ internal sealed class PostgresJobStorage : IJobStorage
          """
          UPDATE mvdmio.jobs
          SET completed_at = :now
-         WHERE id = (
-            SELECT id
-            FROM mvdmio.jobs
-            WHERE job_name = :name
-              AND started_at   IS NOT NULL
-              AND completed_at IS NULL
-            ORDER BY perform_at ASC, created_at ASC
-            LIMIT 1
-         )
+         WHERE id = :id
          """,
          new Dictionary<string, object?> {
             { "now", now },
-            { "name", jobName }
+            { "id", job.JobId }
          }
       );
    }

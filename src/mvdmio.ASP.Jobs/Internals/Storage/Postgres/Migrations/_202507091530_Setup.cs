@@ -18,7 +18,7 @@ internal sealed class _202507091530_Setup : IDbMigration
          CREATE TABLE IF NOT EXISTS mvdmio.jobs (
             created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             last_updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            id                  BIGINT      NOT NULL GENERATED ALWAYS AS IDENTITY,
+            id                  UUID        NOT NULL,
             job_type            TEXT        NOT NULL,
             parameters_type     TEXT        NOT NULL,
             parameters_json     JSONB       NOT NULL,
@@ -28,10 +28,14 @@ internal sealed class _202507091530_Setup : IDbMigration
             perform_at          TIMESTAMPTZ NOT NULL,
             started_at          TIMESTAMPTZ NULL,
             completed_at        TIMESTAMPTZ NULL,
-            PRIMARY KEY (id)
+            PRIMARY KEY (id),
+            CHECK ((started_at IS NULL AND completed_at IS NULL) OR (started_at IS NOT NULL AND completed_at IS NULL) OR (completed_at >= started_at))
          );
          
-         CREATE INDEX idx_jobs__job_name__perform_at__created_at ON mvdmio.jobs (job_name, perform_at, created_at);
+         CREATE INDEX idx_jobs__perform_at__created_at ON mvdmio.jobs (perform_at, created_at);
+         
+         -- Unique index for on-conflict queries so that only one job with the same name can be not-started at the same time.
+         CREATE UNIQUE INDEX idxu_jobs__job_name__not_started ON mvdmio.jobs (job_name) WHERE started_at IS NULL;
          
          CREATE OR REPLACE FUNCTION mvdmio.trigger_update_last_updated_at() 
          RETURNS TRIGGER LANGUAGE plpgsql AS

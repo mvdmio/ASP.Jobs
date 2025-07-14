@@ -28,5 +28,5 @@ internal interface IJobStorage
    /// <summary>
    ///    Remove the job from storage. Either because it has been executed successfully or because it has failed.
    /// </summary>
-   Task FinalizeJobAsync(string jobName, CancellationToken ct = default);
+   Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default);
 }

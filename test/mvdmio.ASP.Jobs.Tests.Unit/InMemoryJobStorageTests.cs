@@ -68,19 +68,6 @@ public class InMemoryJobStorageTests
    }
 
    [Fact]
-   public async Task RemoveJob_ShouldNotDoAnything_WhenEmpty()
-   {
-      // Arrange
-      var jobId = Guid.NewGuid().ToString();
-
-      // Act
-      var remove = async () => await _sut.FinalizeJobAsync(jobId, CancellationToken);
-
-      // Assert
-      await remove.Should().NotThrowAsync();
-   }
-
-   [Fact]
    public async Task RemoveJob_ShouldRemoveJob_WhenExists()
    {
       // Arrange
@@ -88,7 +75,7 @@ public class InMemoryJobStorageTests
       _ = await _sut.StartNextJobAsync(CancellationToken);
 
       // Act
-      await _sut.FinalizeJobAsync(jobStoreItem.Options.JobName, CancellationToken);
+      await _sut.FinalizeJobAsync(jobStoreItem, CancellationToken);
 
       // Assert
       _sut.ScheduledJobs.Should().HaveCount(0);
@@ -173,7 +160,7 @@ public class InMemoryJobStorageTests
 
       // Act
       _ = await _sut.StartNextJobAsync(CancellationToken);
-      await _sut.FinalizeJobAsync(firstInGroup.Options.JobName, CancellationToken);
+      await _sut.FinalizeJobAsync(firstInGroup, CancellationToken);
 
       var secondResult = await _sut.StartNextJobAsync(CancellationToken);
 
@@ -206,10 +193,10 @@ public class InMemoryJobStorageTests
       // Arrange
 
       // Act
-      _ = await AddNewJobStoreItem(id: "TestId");
+      var scheduledJob1 = await AddNewJobStoreItem(id: "TestId");
       _ = await _sut.StartNextJobAsync(CancellationToken);
       var scheduledJob2 = await AddNewJobStoreItem(id: "TestId");
-      await _sut.FinalizeJobAsync("TestId", CancellationToken);
+      await _sut.FinalizeJobAsync(scheduledJob1, CancellationToken);
       var job2 = await _sut.StartNextJobAsync(CancellationToken);
 
       // Assert

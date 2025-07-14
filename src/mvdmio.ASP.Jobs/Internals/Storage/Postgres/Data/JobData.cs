@@ -6,21 +6,21 @@ namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 
 internal sealed class JobData
 {
-   public long? Id { get; set; }
-   public required string JobType { get; set; }
-   public required string ParametersType { get; set; }
-   public required string ParametersJson { get; set; }
-   public required string? CronExpression { get; set; }
-   public required string JobName { get; set; }
-   public required string? JobGroup { get; set; }
-   public required DateTimeOffset PerformAt { get; set; }
+   public required Guid Id { get; init; }
+   public required string JobType { get; init; }
+   public required string ParametersType { get; init; }
+   public required string ParametersJson { get; init; }
+   public required string? CronExpression { get; init; }
+   public required string JobName { get; init; }
+   public required string? JobGroup { get; init; }
+   public required DateTimeOffset PerformAt { get; init; }
    public DateTimeOffset? StartedAt { get; set; }
    public DateTimeOffset? CompletedAt { get; set; }
 
    public static JobData FromJobStoreItem(JobStoreItem jobStoreItem)
    {
       return new JobData {
-         Id = null,
+         Id = jobStoreItem.JobId,
          JobType = jobStoreItem.JobType.AssemblyQualifiedName!,
          ParametersType = jobStoreItem.Parameters.GetType().AssemblyQualifiedName!,
          ParametersJson = JsonSerializer.Serialize(jobStoreItem.Parameters),
@@ -39,6 +39,7 @@ internal sealed class JobData
       var parametersType = ResolveType(ParametersType);
 
       return new JobStoreItem {
+         JobId = Id,
          JobType = jobType,
          Parameters = JsonSerializer.Deserialize(ParametersJson, parametersType)!,
          CronExpression = CronExpression is null ? null : Cronos.CronExpression.Parse(CronExpression),
