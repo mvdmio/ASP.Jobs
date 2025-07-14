@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Linq;
 using System.Text.Json;
+using Cronos;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
@@ -13,9 +15,9 @@ internal sealed class JobData
    public required string? CronExpression { get; init; }
    public required string JobName { get; init; }
    public required string? JobGroup { get; init; }
-   public required DateTimeOffset PerformAt { get; init; }
-   public DateTimeOffset? StartedAt { get; set; }
-   public DateTimeOffset? CompletedAt { get; set; }
+   public required DateTime PerformAt { get; init; }
+   public DateTime? StartedAt { get; set; }
+   public DateTime? CompletedAt { get; set; }
 
    public static JobData FromJobStoreItem(JobStoreItem jobStoreItem)
    {
@@ -42,7 +44,7 @@ internal sealed class JobData
          JobId = Id,
          JobType = jobType,
          Parameters = JsonSerializer.Deserialize(ParametersJson, parametersType)!,
-         CronExpression = CronExpression is null ? null : Cronos.CronExpression.Parse(CronExpression),
+         CronExpression = ParseCronExpression(CronExpression),
          PerformAt = PerformAt,
          Options = new JobScheduleOptions {
             JobName = JobName,
@@ -50,7 +52,7 @@ internal sealed class JobData
          }
       };
    }
-   
+
    private static Type ResolveType(string assemblyQualifiedTypeName)
    {
       var type = Type.GetType(assemblyQualifiedTypeName);
@@ -58,5 +60,16 @@ internal sealed class JobData
          throw new InvalidOperationException($"Type '{assemblyQualifiedTypeName}' could not be resolved.");
       
       return type;
+   }
+
+   private static CronExpression? ParseCronExpression(string? cronExpression)
+   {
+      if (cronExpression is null)
+         return null;
+      
+      if (cronExpression.Split(' ').Length == 6)
+         return Cronos.CronExpression.Parse(cronExpression, CronFormat.IncludeSeconds);
+
+      return Cronos.CronExpression.Parse(cronExpression);
    }
 }

@@ -107,6 +107,16 @@ internal sealed class InMemoryJobStorage : IJobStorage
       }
    }
 
+   public Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
+   {
+      return Task.FromResult(ScheduledJobs);
+   }
+
+   public Task<IEnumerable<JobStoreItem>> GetInProgressJobsAsync(CancellationToken ct = default)
+   {
+      return Task.FromResult(InProgressJobs);
+   }
+
    internal async Task WaitForAllJobsFinishedAsync(CancellationToken ct = default)
    {
       while (ct.IsCancellationRequested == false)

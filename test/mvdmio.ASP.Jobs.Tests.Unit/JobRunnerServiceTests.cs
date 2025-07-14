@@ -16,6 +16,7 @@ public sealed class JobRunnerServiceTests
    private readonly Random _random;
    private readonly JobRunnerService _runner;
    private readonly JobScheduler _scheduler;
+   private readonly TestClock _clock;
 
    private CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 
@@ -23,13 +24,14 @@ public sealed class JobRunnerServiceTests
    {
       _random = new Random(1);
 
-      var services = new ServiceCollection();
-      services.RegisterJob<TestJob>();
+      var services = new JobTestServices().Services;
 
+      _clock = new TestClock();
+      
       _jobStorage = new InMemoryJobStorage();
       var configuration = new JobConfiguration();
 
-      _scheduler = new JobScheduler(services.BuildServiceProvider(), _jobStorage);
+      _scheduler = new JobScheduler(services.BuildServiceProvider(), _jobStorage, _clock);
       _runner = new JobRunnerService(services.BuildServiceProvider(), _jobStorage, Options.Create(configuration));
    }
 

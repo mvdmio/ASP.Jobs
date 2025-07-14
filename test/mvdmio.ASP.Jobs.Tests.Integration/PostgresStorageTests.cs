@@ -4,25 +4,27 @@ using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
+using mvdmio.Database.PgSQL;
 using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Integration;
 
 public sealed class PostgresStorageTests : IAsyncLifetime
 {
-   private readonly PostgresFixture _fixture;
+   private readonly DatabaseConnection _db;
    private readonly TestClock _clock;
    
    private readonly PostgresJobStorage _storage;
+   
 
    public PostgresStorageTests(PostgresFixture fixture)
    {
-      _fixture = fixture;
       _clock = new TestClock();
+      _db = fixture.DatabaseConnection;
       
       _storage = new PostgresJobStorage(
          new PostgresJobStorageConfiguration {
-            DatabaseConnection = _fixture.DatabaseConnection
+            DatabaseConnection = _db
          },
          _clock
       );
@@ -30,12 +32,12 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    
    public async ValueTask InitializeAsync()
    {
-      await _fixture.DatabaseConnection.BeginTransactionAsync();
+      await _db.BeginTransactionAsync();
    }
 
    public async ValueTask DisposeAsync()
    {
-      await _fixture.DatabaseConnection.RollbackTransactionAsync();
+      await _db.RollbackTransactionAsync();
    }
    
    [Fact]
@@ -211,8 +213,8 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       jobs[0].CompletedAt.Should().BeWithin(TimeSpan.FromSeconds(1)).Before(_clock.UtcNow);
    }
    
-   private IList<JobData> GetJobsFromDatabase()
+   private List<JobData> GetJobsFromDatabase()
    {
-      return _fixture.DatabaseConnection.Dapper.Query<JobData>("SELECT * FROM mvdmio.jobs").ToList();
+      return _db.Dapper.Query<JobData>("SELECT * FROM mvdmio.jobs").ToList();
    }
 }

@@ -118,4 +118,33 @@ internal sealed class PostgresJobStorage : IJobStorage
          }
       );
    }
+
+   public async Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
+   {
+      var jobData = await _db.Dapper.QueryAsync<JobData>(
+         """
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, completed_at
+         FROM mvdmio.jobs
+         WHERE started_at IS NULL
+         ORDER BY perform_at ASC, created_at ASC
+         """
+      );
+      
+      return jobData.Select(x => x.ToJobStoreItem());
+   }
+
+   public async Task<IEnumerable<JobStoreItem>> GetInProgressJobsAsync(CancellationToken ct = default)
+   {
+      var jobData = await _db.Dapper.QueryAsync<JobData>(
+         """
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, completed_at
+         FROM mvdmio.jobs
+         WHERE started_at   IS NOT NULL
+           AND completed_at IS NULL
+         ORDER BY perform_at ASC, created_at ASC
+         """
+      );
+      
+      return jobData.Select(x => x.ToJobStoreItem());
+   }
 }

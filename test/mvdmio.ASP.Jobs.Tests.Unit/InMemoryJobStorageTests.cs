@@ -203,7 +203,7 @@ public class InMemoryJobStorageTests
       job2.Should().Be(scheduledJob2);
    }
 
-   private async Task<JobStoreItem> AddNewJobStoreItem(DateTimeOffset? performAt = null, string? id = null, string? group = null)
+   private async Task<JobStoreItem> AddNewJobStoreItem(DateTime? performAt = null, string? id = null, string? group = null)
    {
       var jobItem = new JobStoreItem {
          JobType = typeof(TestJob),

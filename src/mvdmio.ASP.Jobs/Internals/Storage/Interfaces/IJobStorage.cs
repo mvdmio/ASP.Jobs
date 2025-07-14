@@ -29,4 +29,15 @@ internal interface IJobStorage
    ///    Remove the job from storage. Either because it has been executed successfully or because it has failed.
    /// </summary>
    Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default);
+
+   /// <summary>
+   ///   Retrieve all jobs that are scheduled to be executed in the future.
+   /// </summary>
+   Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default);
+
+   /// <summary>
+   ///   Retrieve all jobs that are currently executing.
+   /// </summary>
+   /// <returns></returns>
+   Task<IEnumerable<JobStoreItem>> GetInProgressJobsAsync(CancellationToken ct = default);
 }

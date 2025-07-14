@@ -8,6 +8,11 @@ internal class SystemClock : IClock
 
    public static SystemClock Instance => _instance.Value;
 
-   public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
-   public DateTimeOffset Now => DateTimeOffset.Now;
+   private SystemClock()
+   {
+      // Private constructor to enforce singleton pattern
+   }
+   
+   public DateTime UtcNow => DateTime.UtcNow;
+   public DateTime Now => DateTime.Now;
 }

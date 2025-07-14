@@ -12,20 +12,20 @@ namespace mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 public sealed class PostgresFixture : IAsyncLifetime
 {
    private readonly PostgreSqlContainer _dbContainer;
- 
+   private readonly DatabaseConnectionFactory _databaseConnectionFactory;
+
    public string ConnectionString => _dbContainer.GetConnectionString();
-   public DatabaseConnection DatabaseConnection { get; private set; } = null!;
+   public DatabaseConnection DatabaseConnection => _databaseConnectionFactory.ForConnectionString(ConnectionString);
    
    public PostgresFixture()
    {
+      _databaseConnectionFactory = new DatabaseConnectionFactory();
       _dbContainer = new PostgreSqlBuilder().Build();
    }
    
    public async ValueTask InitializeAsync()
    {
       await _dbContainer.StartAsync();
-      
-      DatabaseConnection = new DatabaseConnectionFactory().ForConnectionString(ConnectionString);
       
       var migrator = new DatabaseMigrator(DatabaseConnection, typeof(PostgresJobStorage).Assembly);
       await migrator.MigrateDatabaseToLatestAsync();

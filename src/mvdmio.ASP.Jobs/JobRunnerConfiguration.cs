@@ -44,7 +44,7 @@ public class JobRunnerConfiguration
          DatabaseConnection = new DatabaseConnectionFactory().ForConnectionString(connectionString)
       };
       
-      JobStorage = new PostgresJobStorage(postgresConfiguration, new SystemClock());
+      JobStorage = new PostgresJobStorage(postgresConfiguration, SystemClock.Instance);
    }
 
    internal void SetupServices(IServiceCollection services)

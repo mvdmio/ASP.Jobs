@@ -56,15 +56,5 @@ public interface IJobScheduler
    /// <summary>
    ///    Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
-   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, JobScheduleOptions options, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>;
-
-   /// <summary>
-   ///    Schedule a job to be performed repeatedly on a given CRON schedule.
-   /// </summary>
    public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>;
-
-   /// <summary>
-   ///    Schedule a job to be performed repeatedly on a given CRON schedule.
-   /// </summary>
-   public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, JobScheduleOptions options, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>;
 }

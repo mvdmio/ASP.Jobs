@@ -37,8 +37,9 @@ public static class Jobs
    {
       var serviceProvider = _services.BuildServiceProvider();
       var jobStorage = new InMemoryJobStorage();
+      var clock = SystemClock.Instance;
 
-      Scheduler = new JobScheduler(serviceProvider, jobStorage);
+      Scheduler = new JobScheduler(serviceProvider, jobStorage, clock);
       _runner = new JobRunnerService(serviceProvider, jobStorage, new OptionsWrapper<JobConfiguration>(configuration ?? new JobConfiguration()));
 
       AsyncHelper.RunSync(() => _runner.StartAsync(CancellationToken.None));

@@ -7,33 +7,40 @@ using Cronos;
 using Microsoft.Extensions.DependencyInjection;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
+using mvdmio.ASP.Jobs.Utils;
 using Serilog;
 
 namespace mvdmio.ASP.Jobs.Internals;
 
 internal sealed class JobScheduler : IJobScheduler
 {
-   private readonly IJobStorage _jobStorage;
    private readonly IServiceProvider _services;
-
-   public JobScheduler(IServiceProvider services, IJobStorage jobStorage)
+   private readonly IJobStorage _jobStorage;
+   private readonly IClock _clock;
+   
+   public JobScheduler(IServiceProvider services, IJobStorage jobStorage, IClock clock)
    {
       _services = services;
       _jobStorage = jobStorage;
+      _clock = clock;
    }
 
    public async Task PerformNowAsync<TJob, TParameters>(TParameters parameters, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
+      var job = GetJobFromDi<TJob, TParameters>();
+      
       try
       {
-         var job = GetJobFromDi<TJob, TParameters>();
-
          await job.OnJobScheduledAsync(parameters, cancellationToken);
          await job.ExecuteAsync(parameters, cancellationToken);
+         await job.OnJobExecutedAsync(parameters, cancellationToken);
       }
       catch (Exception e)
       {
          Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         
+         await job.OnJobFailedAsync(parameters, e, cancellationToken);
+         
          throw;
       }
    }
@@ -59,7 +66,7 @@ internal sealed class JobScheduler : IJobScheduler
          await _jobStorage.ScheduleJobsAsync(
             enumeratedParameters.Select(x => new JobStoreItem {
                   JobType = typeof(TJob),
-                  PerformAt = DateTime.UtcNow,
+                  PerformAt = _clock.UtcNow,
                   Parameters = x!,
                   Options = new JobScheduleOptions()
                }
@@ -91,7 +98,7 @@ internal sealed class JobScheduler : IJobScheduler
          await _jobStorage.ScheduleJobAsync(
             new JobStoreItem {
                JobType = typeof(TJob),
-               PerformAt = DateTime.UtcNow,
+               PerformAt = _clock.UtcNow,
                Parameters = parameters,
                Options = options ?? new JobScheduleOptions()
             },
@@ -178,20 +185,10 @@ internal sealed class JobScheduler : IJobScheduler
 
    public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
-      return PerformCronAsync<TJob, TParameters>(cronExpression, parameters, new JobScheduleOptions(), runImmediately, cancellationToken);
-   }
-
-   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, JobScheduleOptions options, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
-   {
       return PerformCronAsync<TJob, TParameters>(CronExpression.Parse(cronExpression), parameters, runImmediately, cancellationToken);
    }
 
-   public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
-   {
-      return PerformCronAsync<TJob, TParameters>(cronExpression, parameters, new JobScheduleOptions(), runImmediately, cancellationToken);
-   }
-
-   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, JobScheduleOptions? options = null, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
+   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken cancellationToken = default) where TJob : Job<TParameters>
    {
       if (parameters is null)
          throw new ArgumentNullException(nameof(parameters));
@@ -201,16 +198,16 @@ internal sealed class JobScheduler : IJobScheduler
          var job = GetJobFromDi<TJob, TParameters>();
          await job.OnJobScheduledAsync(parameters, cancellationToken);
 
-         var scheduleOptions = options ?? new JobScheduleOptions();
-         
-         // CRON jobs may not be scheduled twice.
-         scheduleOptions.JobName = $"cron_{typeof(TJob).Name}";
-         
+         var normalizedCronExpression = cronExpression.ToString().Replace(" ", "");
+         var scheduleOptions = new JobScheduleOptions {
+            JobName = $"cron_{typeof(TJob).Name}_{normalizedCronExpression}" // CRON jobs may not be scheduled twice.
+         };
+
          if (runImmediately)
          {
             var jobItem = new JobStoreItem {
                JobType = typeof(TJob),
-               PerformAt = DateTime.UtcNow,
+               PerformAt = _clock.UtcNow,
                Parameters = parameters,
                Options = scheduleOptions,
                CronExpression = cronExpression
@@ -220,7 +217,7 @@ internal sealed class JobScheduler : IJobScheduler
          }
          else
          {
-            var nextOccurence = cronExpression.GetNextOccurrence(DateTime.UtcNow);
+            var nextOccurence = cronExpression.GetNextOccurrence(_clock.UtcNow);
             if (nextOccurence is null)
                throw new InvalidOperationException("CRON expression does not have a next occurrence.");
 
