@@ -17,7 +17,6 @@ internal sealed class JobData
    public required string? JobGroup { get; init; }
    public required DateTime PerformAt { get; init; }
    public DateTime? StartedAt { get; set; }
-   public DateTime? CompletedAt { get; set; }
 
    public static JobData FromJobStoreItem(JobStoreItem jobStoreItem)
    {
@@ -30,8 +29,7 @@ internal sealed class JobData
          JobName = jobStoreItem.Options.JobName,
          JobGroup = jobStoreItem.Options.Group,
          PerformAt = jobStoreItem.PerformAt,
-         StartedAt = null,
-         CompletedAt = null
+         StartedAt = null
       };
    }
 

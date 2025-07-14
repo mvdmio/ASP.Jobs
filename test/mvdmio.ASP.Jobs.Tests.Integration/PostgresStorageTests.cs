@@ -187,7 +187,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    }
 
    [Fact]
-   public async Task FinalizeJob()
+   public async Task FinalizeJob_ShouldDeleteJobFromDatabase()
    {
       // Arrange
       var job1 = new JobStoreItem {
@@ -209,8 +209,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       
       // Assert
       var jobs = GetJobsFromDatabase();
-      jobs.Should().HaveCount(1);
-      jobs[0].CompletedAt.Should().BeWithin(TimeSpan.FromSeconds(1)).Before(_clock.UtcNow);
+      jobs.Should().HaveCount(0);
    }
    
    private List<JobData> GetJobsFromDatabase()
