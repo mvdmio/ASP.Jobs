@@ -187,12 +187,12 @@ public sealed class JobRunnerServiceTests
       var startTime = Stopwatch.GetTimestamp();
       
       await _runner.StartAsync(CancellationToken);
-      await _jobStorage.WaitForAllJobsFinishedAsync(CancellationToken);
+      await WaitForAllJobsToFinishAsync();
       await _runner.StopAsync(CancellationToken);
       
       return Stopwatch.GetElapsedTime(startTime);
    }
-   
+
    private static void AssertExecuted(TestJob.Parameters job)
    {
       job.Should()
@@ -213,5 +213,23 @@ public sealed class JobRunnerServiceTests
                Crashed = true
             }
          );
+   }
+
+   private async Task WaitForAllJobsToFinishAsync(TimeSpan? maxWaitTime = null)
+   {
+      var startTime = Stopwatch.GetTimestamp();
+      maxWaitTime ??= TimeSpan.FromSeconds(1);
+      
+      do
+      {
+         var scheduledJobs = await _jobStorage.GetScheduledJobsAsync(CancellationToken);
+         var inProgressJobs = await _jobStorage.GetInProgressJobsAsync(CancellationToken);
+         
+         if (scheduledJobs.Any() || inProgressJobs.Any())
+            await Task.Delay(10, CancellationToken);
+         else
+            break;
+      }
+      while (Stopwatch.GetElapsedTime(startTime) < maxWaitTime);
    }
 }

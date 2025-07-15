@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Linq;
 using System.Text.Json;
 using Cronos;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
@@ -56,7 +55,7 @@ internal sealed class JobData
       var type = Type.GetType(assemblyQualifiedTypeName);
       if (type is null)
          throw new InvalidOperationException($"Type '{assemblyQualifiedTypeName}' could not be resolved.");
-      
+
       return type;
    }
 
@@ -64,7 +63,7 @@ internal sealed class JobData
    {
       if (cronExpression is null)
          return null;
-      
+
       if (cronExpression.Split(' ').Length == 6)
          return Cronos.CronExpression.Parse(cronExpression, CronFormat.IncludeSeconds);
 

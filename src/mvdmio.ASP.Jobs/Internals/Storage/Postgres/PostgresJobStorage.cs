@@ -82,38 +82,92 @@ internal sealed class PostgresJobStorage : IJobStorage
             }
          );
       }
+      
+      await _db.Dapper.ExecuteAsync("NOTIFY jobs_updated");
    }
 
-   public async Task<JobStoreItem?> StartNextJobAsync(CancellationToken ct = default)
+   public async Task<JobStoreItem?> WaitForNextJobAsync(TimeSpan? maxWaitTime = null, CancellationToken ct = default)
    {
       await EnsureMigrationsRunAsync(ct);
       
-      var now = _clock.UtcNow;
+      var startTime = _clock.UtcNow;
       
-      var selectedJob = await _db.Dapper.QueryFirstOrDefaultAsync<JobData>(
+      while (true)
+      {
+         var now = _clock.UtcNow;
+         
+         var selectedJob = await _db.Dapper.QueryFirstOrDefaultAsync<JobData>(
+            """
+            UPDATE mvdmio.jobs
+            SET started_at = :now
+            WHERE id = (
+               SELECT id
+               FROM mvdmio.jobs
+               WHERE perform_at <= :now
+                 AND started_at IS NULL
+               ORDER BY perform_at ASC, created_at ASC
+               LIMIT 1
+               FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at
+            """,
+            new Dictionary<string, object?> {
+               { "now", now }
+            }
+         );
+
+         if (selectedJob is not null)
+            return selectedJob.ToJobStoreItem();
+
+         if (maxWaitTime.HasValue && now - startTime >= maxWaitTime)
+            return null;
+
+         await SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(maxWaitTime, startTime, now, ct);
+      }
+   }
+
+   private async Task SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(TimeSpan? maxWaitTime, DateTime startTime, DateTime now, CancellationToken ct)
+   {
+      var minPerformAt = await _db.Dapper.QueryFirstOrDefaultAsync<DateTime?>(
          """
-         UPDATE mvdmio.jobs
-         SET started_at = :now
-         WHERE id = (
-            SELECT id
-            FROM mvdmio.jobs
-            WHERE perform_at <= :now
-              AND started_at IS NULL
-            ORDER BY perform_at ASC, created_at ASC
-            LIMIT 1
-            FOR UPDATE SKIP LOCKED
-         )
-         RETURNING id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at
-         """,
-         new Dictionary<string, object?> {
-            { "now", now }
-         }
+         SELECT MIN(perform_at)
+         FROM mvdmio.jobs
+         WHERE started_at IS NULL
+         """
       );
+         
+      TimeSpan? delta = minPerformAt.HasValue ? minPerformAt.Value - now : null;
+         
+      // Remaining time until maxWaitTime expires
+      TimeSpan? remaining = maxWaitTime.HasValue ? maxWaitTime.Value - (_clock.UtcNow - startTime) : null;
 
-      if (selectedJob is null)
-         return null;
+      // Effective waitDuration: min(delta, remaining), or one of them, or null (indefinite)
+      TimeSpan? waitDuration;
+      if (delta.HasValue && remaining.HasValue)
+         waitDuration = delta < remaining ? delta : remaining;
+      else if (delta.HasValue)
+         waitDuration = delta.Value;
+      else if (remaining.HasValue)
+         waitDuration = remaining.Value;
+      else
+         waitDuration = null;
 
-      return selectedJob.ToJobStoreItem();
+      if (waitDuration.HasValue && waitDuration.Value <= TimeSpan.Zero)
+         return;
+         
+      await _db.Dapper.ExecuteAsync("LISTEN jobs_updated");
+
+      if (waitDuration.HasValue)
+      {
+         await Task.WhenAny(
+            Task.Delay(waitDuration.Value, ct),
+            _db.Connection.WaitAsync(ct)
+         );   
+      }
+      else
+      {
+         await _db.Connection.WaitAsync(ct);
+      }
    }
 
    public async Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default)

@@ -9,8 +9,8 @@ namespace mvdmio.ASP.Jobs.Internals.Tasks;
 
 internal sealed class ThreadLimitedTaskScheduler : TaskScheduler, IDisposable
 {
-   private readonly CancellationTokenSource _cts = new CancellationTokenSource();
-   private readonly ConcurrentQueue<Task> _tasks = new ConcurrentQueue<Task>();
+   private readonly CancellationTokenSource _cts = new();
+   private readonly ConcurrentQueue<Task> _tasks = new();
    
    private readonly List<Thread> _threads;
    
@@ -19,7 +19,7 @@ internal sealed class ThreadLimitedTaskScheduler : TaskScheduler, IDisposable
       if (numberOfThreads < 1)
          throw new ArgumentOutOfRangeException(nameof(numberOfThreads));
 
-      _threads = Enumerable.Range(0, numberOfThreads).Select(i => {
+      _threads = Enumerable.Range(0, numberOfThreads).Select(_ => {
             var thread = new Thread(DoWork) {
                IsBackground = true
             };

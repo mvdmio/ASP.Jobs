@@ -81,12 +81,9 @@ internal sealed class JobRunnerService : BackgroundService
 
    private async Task PerformNextJobAsync(CancellationToken cancellationToken)
    {
-      var jobBusItem = await _jobStorage.StartNextJobAsync(cancellationToken);
+      var jobBusItem = await _jobStorage.WaitForNextJobAsync(ct: cancellationToken);
       if (jobBusItem is null)
-      {
-         await Task.Delay(100, cancellationToken);
          return;
-      }
 
       // Do not await this task, otherwise only one job will run at a time.
       // The TaskScheduler will handle concurrency and ensure all tasks are completed before the service stops.

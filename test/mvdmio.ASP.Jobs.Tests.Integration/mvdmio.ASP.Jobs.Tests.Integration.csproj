@@ -9,24 +9,24 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="AwesomeAssertions" Version="9.1.0" />
+        <PackageReference Include="AwesomeAssertions" Version="9.1.0"/>
         <PackageReference Include="coverlet.collector" Version="6.0.4">
-          <PrivateAssets>all</PrivateAssets>
-          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.7" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-        <PackageReference Include="Testcontainers.PostgreSql" Version="4.6.0" />
-        <PackageReference Include="xunit.v3" Version="3.0.0" />
+        <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.7"/>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1"/>
+        <PackageReference Include="Testcontainers.PostgreSql" Version="4.6.0"/>
+        <PackageReference Include="xunit.v3" Version="3.0.0"/>
         <PackageReference Include="xunit.runner.visualstudio" Version="3.1.2">
-          <PrivateAssets>all</PrivateAssets>
-          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\mvdmio.ASP.Jobs\mvdmio.ASP.Jobs.csproj" />
-      <ProjectReference Include="..\mvdmio.ASP.Jobs.Tests.Unit\mvdmio.ASP.Jobs.Tests.Unit.csproj" />
+        <ProjectReference Include="..\..\src\mvdmio.ASP.Jobs\mvdmio.ASP.Jobs.csproj"/>
+        <ProjectReference Include="..\mvdmio.ASP.Jobs.Tests.Unit\mvdmio.ASP.Jobs.Tests.Unit.csproj"/>
     </ItemGroup>
 
 </Project>

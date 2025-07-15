@@ -124,17 +124,17 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    }
    
    [Fact]
-   public async Task StartNextJob_ShouldReturnNull_WhenNoJobsAvailable()
+   public async Task WaitForNextJob_ShouldReturnNull_WhenNoJobsAvailable()
    {
       // Act
-      var job = await _storage.StartNextJobAsync(TestContext.Current.CancellationToken);
+      var job = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
       
       // Assert
       job.Should().BeNull();
    }
    
    [Fact]
-   public async Task StartNextJob_ShouldReturnNextJob_WhenAvailable()
+   public async Task WaitForNextJob_ShouldReturnNextJob_WhenAvailable()
    {
       // Arrange
       var job1 = new JobStoreItem {
@@ -151,7 +151,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       await _storage.ScheduleJobAsync(job1, TestContext.Current.CancellationToken);
       
       // Act
-      var startedJob = await _storage.StartNextJobAsync(TestContext.Current.CancellationToken);
+      var startedJob = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
       
       // Assert
       startedJob.Should().BeEquivalentTo(job1);
@@ -162,7 +162,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    }
    
    [Fact]
-   public async Task StartNextJob_ShouldNotStartSameJobTwice()
+   public async Task WaitForNextJob_ShouldNotStartSameJobTwice()
    {
       // Arrange
       var job1 = new JobStoreItem {
@@ -179,8 +179,8 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       await _storage.ScheduleJobAsync(job1, TestContext.Current.CancellationToken);
       
       // Act
-      _ = await _storage.StartNextJobAsync(TestContext.Current.CancellationToken);
-      var startedJob2 = await _storage.StartNextJobAsync(TestContext.Current.CancellationToken);
+      _ = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
+      var startedJob2 = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
       
       // Assert
       startedJob2.Should().BeNull();
@@ -202,7 +202,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       };
       
       await _storage.ScheduleJobAsync(job1, TestContext.Current.CancellationToken);
-      var startedJob1 = await _storage.StartNextJobAsync(TestContext.Current.CancellationToken);
+      var startedJob1 = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
       
       // Act
       await _storage.FinalizeJobAsync(startedJob1!, TestContext.Current.CancellationToken);

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
@@ -21,9 +22,10 @@ internal interface IJobStorage
    ///    Retrieve the next job that may be executed and mark it as 'in progress'.
    ///    Calling this method will not return the same job twice.
    ///    This method will not return jobs that are scheduled for the future.
-   ///    This method will return null if there are no jobs available.
+   ///    This method will block until a new job is available.
    /// </summary>
-   Task<JobStoreItem?> StartNextJobAsync(CancellationToken ct = default);
+   /// <exception cref="OperationCanceledException">Thrown when cancellation is requested while waiting.</exception>
+   Task<JobStoreItem?> WaitForNextJobAsync(TimeSpan? maxWaitTime = null, CancellationToken ct = default);
 
    /// <summary>
    ///    Remove the job from storage. Either because it has been executed successfully or because it has failed.
