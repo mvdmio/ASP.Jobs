@@ -10,13 +10,17 @@ public class InMemoryJobStorageTests
 {
    private readonly TestClock _clock;
    private readonly InMemoryJobStorage _sut;
+   private readonly CancellationTokenSource _cts;
 
-   private CancellationToken CancellationToken => TestContext.Current.CancellationToken;
-
+   private CancellationToken CancellationToken => _cts.Token;
+   
    public InMemoryJobStorageTests()
    {
+      _cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
       _clock = new TestClock();
       _sut = new InMemoryJobStorage(_clock);
+      
+      _cts.CancelAfter(TimeSpan.FromSeconds(1));
    }
 
    [Fact]
@@ -72,7 +76,7 @@ public class InMemoryJobStorageTests
    {
       // Arrange
       var jobStoreItem = await AddNewJobStoreItem();
-      _ = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      _ = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Act
       await _sut.FinalizeJobAsync(jobStoreItem, CancellationToken);
@@ -86,9 +90,9 @@ public class InMemoryJobStorageTests
    public async Task WaitForNextJob_ShouldReturnNull_WhenEmpty()
    {
       // Arrange
-
+      
       // Act
-      var result = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      var result = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Assert
       result.Should().BeNull();
@@ -101,7 +105,7 @@ public class InMemoryJobStorageTests
       var jobStoreItem = await AddNewJobStoreItem();
 
       // Act
-      var result = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      var result = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Assert
       result.Should().BeEquivalentTo(jobStoreItem);
@@ -114,8 +118,8 @@ public class InMemoryJobStorageTests
       _ = await AddNewJobStoreItem();
 
       // Act
-      _ = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
-      var result = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      _ = await _sut.WaitForNextJobAsync(CancellationToken);
+      var result = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Assert
       result.Should().BeNull();
@@ -129,7 +133,7 @@ public class InMemoryJobStorageTests
       var executableJobItem = await AddNewJobStoreItem();
 
       // Act
-      var result = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      var result = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Assert
       result.Should().BeEquivalentTo(executableJobItem);
@@ -143,8 +147,8 @@ public class InMemoryJobStorageTests
       _ = await AddNewJobStoreItem(group: "test");
 
       // Act
-      var firstResult = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
-      var secondResult = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      var firstResult = await _sut.WaitForNextJobAsync(CancellationToken);
+      var secondResult = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Assert
       firstResult.Should().BeEquivalentTo(firstInGroup);
@@ -159,10 +163,10 @@ public class InMemoryJobStorageTests
       var secondInGroup = await AddNewJobStoreItem(group: "test");
 
       // Act
-      _ = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      _ = await _sut.WaitForNextJobAsync(CancellationToken);
       await _sut.FinalizeJobAsync(firstInGroup, CancellationToken);
 
-      var secondResult = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      var secondResult = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Assert
       secondResult.Should().Be(secondInGroup);
@@ -177,9 +181,9 @@ public class InMemoryJobStorageTests
       var job3 = await AddNewJobStoreItem(id: "C", performAt: DateTime.UtcNow.Subtract(TimeSpan.FromSeconds(3))); // Should be executed first
 
       // Act
-      var firstJob = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
-      var secondJob = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
-      var thirdJob = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      var firstJob = await _sut.WaitForNextJobAsync(CancellationToken);
+      var secondJob = await _sut.WaitForNextJobAsync(CancellationToken);
+      var thirdJob = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Assert
       firstJob.Should().Be(job3);
@@ -194,10 +198,10 @@ public class InMemoryJobStorageTests
 
       // Act
       var scheduledJob1 = await AddNewJobStoreItem(id: "TestId");
-      _ = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      _ = await _sut.WaitForNextJobAsync(CancellationToken);
       var scheduledJob2 = await AddNewJobStoreItem(id: "TestId");
       await _sut.FinalizeJobAsync(scheduledJob1, CancellationToken);
-      var job2 = await _sut.WaitForNextJobAsync(TimeSpan.Zero, ct: CancellationToken);
+      var job2 = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Assert
       job2.Should().Be(scheduledJob2);

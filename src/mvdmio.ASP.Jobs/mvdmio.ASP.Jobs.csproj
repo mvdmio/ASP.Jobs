@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFrameworks>netstandard2.0;net9</TargetFrameworks>
+        <TargetFrameworks>net8;net9</TargetFrameworks>
         <LangVersion>latest</LangVersion>
         <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
@@ -11,7 +11,7 @@
     </PropertyGroup>
 
     <PropertyGroup>
-        <Version>3.0.6</Version>
+        <Version>3.0.7</Version>
         <Title>mvdmio.ASP.Jobs</Title>
         <Description>Job scheduling library for use in ASP.NET projects.</Description>
         <Company>mvdmio</Company>

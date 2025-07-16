@@ -1,11 +1,15 @@
 ﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using AwesomeAssertions;
 using Cronos;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
+using NSubstitute;
 using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Unit;
@@ -29,10 +33,13 @@ public sealed class JobRunnerServiceTests
       _clock = new TestClock();
       
       _jobStorage = new InMemoryJobStorage();
-      var configuration = new JobConfiguration();
-
+      var configuration = new JobConfiguration {
+         JobRunnerThreadsCount = 10
+      };
+      var loggerFactory = new NullLoggerFactory();
+      
       _scheduler = new JobScheduler(services.BuildServiceProvider(), _jobStorage, _clock);
-      _runner = new JobRunnerService(services.BuildServiceProvider(), _jobStorage, Options.Create(configuration));
+      _runner = new JobRunnerService(services.BuildServiceProvider(), _jobStorage, Options.Create(configuration), loggerFactory.CreateLogger<JobRunnerService>());
    }
 
    [Fact]
@@ -134,18 +141,13 @@ public sealed class JobRunnerServiceTests
       }
 
       // Act
-      var executionTime = await RunJobs();
+      await RunJobs();
       
       // Assert
       _jobStorage.ScheduledJobs.Should().HaveCount(0);
       _jobStorage.InProgressJobs.Should().HaveCount(0);
       
       jobs.ForEach(AssertExecuted);
-      
-      // This test is flaky because it depends on timing.
-      // Try to assert parallelism. Approximately, the execution time should be less than the sum of all delays.
-      //var totalDelay = jobs.Sum(job => job.Delay?.TotalMilliseconds ?? 0);
-      //executionTime.Should().BeLessThan(TimeSpan.FromMilliseconds(totalDelay));
    }
 
    // TODO: Test CRON jobs. Requires improved test harness with more refined control over time and timing.
@@ -182,15 +184,11 @@ public sealed class JobRunnerServiceTests
       return parameters;
    }
 
-   private async Task<TimeSpan> RunJobs()
+   private async Task RunJobs()
    {
-      var startTime = Stopwatch.GetTimestamp();
-      
       await _runner.StartAsync(CancellationToken);
       await WaitForAllJobsToFinishAsync();
       await _runner.StopAsync(CancellationToken);
-      
-      return Stopwatch.GetElapsedTime(startTime);
    }
 
    private static void AssertExecuted(TestJob.Parameters job)
@@ -215,10 +213,9 @@ public sealed class JobRunnerServiceTests
          );
    }
 
-   private async Task WaitForAllJobsToFinishAsync(TimeSpan? maxWaitTime = null)
+   private async Task WaitForAllJobsToFinishAsync()
    {
       var startTime = Stopwatch.GetTimestamp();
-      maxWaitTime ??= TimeSpan.FromSeconds(1);
       
       do
       {
@@ -230,6 +227,6 @@ public sealed class JobRunnerServiceTests
          else
             break;
       }
-      while (Stopwatch.GetElapsedTime(startTime) < maxWaitTime);
+      while (true);
    }
 }

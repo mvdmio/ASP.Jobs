@@ -15,10 +15,13 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    private readonly TestClock _clock;
    
    private readonly PostgresJobStorage _storage;
+   private readonly CancellationTokenSource _cts;
    
+   private CancellationToken CancellationToken => _cts.Token;
 
    public PostgresStorageTests(PostgresFixture fixture)
    {
+      _cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
       _clock = new TestClock();
       _db = fixture.DatabaseConnection;
       
@@ -28,6 +31,8 @@ public sealed class PostgresStorageTests : IAsyncLifetime
          },
          _clock
       );
+      
+      _cts.CancelAfter(TimeSpan.FromSeconds(1));
    }
    
    public async ValueTask InitializeAsync()
@@ -54,7 +59,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       };
       
       // Act
-      await _storage.ScheduleJobAsync(jobStoreItem, TestContext.Current.CancellationToken);
+      await _storage.ScheduleJobAsync(jobStoreItem, CancellationToken);
       
       // Assert
       var jobs = GetJobsFromDatabase();
@@ -79,7 +84,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       };
       
       // Act
-      await _storage.ScheduleJobAsync(jobStoreItem, TestContext.Current.CancellationToken);
+      await _storage.ScheduleJobAsync(jobStoreItem, CancellationToken);
       
       // Assert
       var jobs = GetJobsFromDatabase();
@@ -114,8 +119,8 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       };
       
       // Act
-      await _storage.ScheduleJobAsync(jobStoreItem1, TestContext.Current.CancellationToken);
-      await _storage.ScheduleJobAsync(jobStoreItem2, TestContext.Current.CancellationToken);
+      await _storage.ScheduleJobAsync(jobStoreItem1, CancellationToken);
+      await _storage.ScheduleJobAsync(jobStoreItem2, CancellationToken);
       
       // Assert
       var jobs = GetJobsFromDatabase();
@@ -127,7 +132,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    public async Task WaitForNextJob_ShouldReturnNull_WhenNoJobsAvailable()
    {
       // Act
-      var job = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
+      var job = await _storage.WaitForNextJobAsync(CancellationToken);
       
       // Assert
       job.Should().BeNull();
@@ -148,10 +153,10 @@ public sealed class PostgresStorageTests : IAsyncLifetime
          PerformAt = _clock.UtcNow
       };
       
-      await _storage.ScheduleJobAsync(job1, TestContext.Current.CancellationToken);
+      await _storage.ScheduleJobAsync(job1, CancellationToken);
       
       // Act
-      var startedJob = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
+      var startedJob = await _storage.WaitForNextJobAsync(CancellationToken);
       
       // Assert
       startedJob.Should().BeEquivalentTo(job1);
@@ -176,11 +181,11 @@ public sealed class PostgresStorageTests : IAsyncLifetime
          PerformAt = _clock.UtcNow
       };
       
-      await _storage.ScheduleJobAsync(job1, TestContext.Current.CancellationToken);
+      await _storage.ScheduleJobAsync(job1, CancellationToken);
       
       // Act
-      _ = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
-      var startedJob2 = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
+      _ = await _storage.WaitForNextJobAsync(CancellationToken);
+      var startedJob2 = await _storage.WaitForNextJobAsync(CancellationToken);
       
       // Assert
       startedJob2.Should().BeNull();
@@ -201,11 +206,11 @@ public sealed class PostgresStorageTests : IAsyncLifetime
          PerformAt = _clock.UtcNow
       };
       
-      await _storage.ScheduleJobAsync(job1, TestContext.Current.CancellationToken);
-      var startedJob1 = await _storage.WaitForNextJobAsync(TimeSpan.Zero, ct: TestContext.Current.CancellationToken);
+      await _storage.ScheduleJobAsync(job1, CancellationToken);
+      var startedJob1 = await _storage.WaitForNextJobAsync(CancellationToken);
       
       // Act
-      await _storage.FinalizeJobAsync(startedJob1!, TestContext.Current.CancellationToken);
+      await _storage.FinalizeJobAsync(startedJob1!, CancellationToken);
       
       // Assert
       var jobs = GetJobsFromDatabase();

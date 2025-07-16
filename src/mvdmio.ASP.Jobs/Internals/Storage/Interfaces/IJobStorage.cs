@@ -25,7 +25,7 @@ internal interface IJobStorage
    ///    This method will block until a new job is available.
    /// </summary>
    /// <exception cref="OperationCanceledException">Thrown when cancellation is requested while waiting.</exception>
-   Task<JobStoreItem?> WaitForNextJobAsync(TimeSpan? maxWaitTime = null, CancellationToken ct = default);
+   Task<JobStoreItem?> WaitForNextJobAsync(CancellationToken ct = default);
 
    /// <summary>
    ///    Remove the job from storage. Either because it has been executed successfully or because it has failed.
