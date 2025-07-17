@@ -3,39 +3,20 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using JetBrains.Annotations;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Utils;
 using mvdmio.Database.PgSQL;
-using mvdmio.Database.PgSQL.Connectors;
 using mvdmio.Database.PgSQL.Dapper.QueryParameters;
-using mvdmio.Database.PgSQL.Migrations;
-using mvdmio.Database.PgSQL.Models;
 using NpgsqlTypes;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
-
-/// <summary>
-///    Configuration options for the Postgres job storage.
-/// </summary>
-[PublicAPI]
-public sealed class PostgresJobStorageConfiguration
-{
-   /// <summary>
-   ///    The database connection to use for the job storage.
-   /// </summary>
-   public required DatabaseConnection DatabaseConnection { get; set; }
-}
 
 internal sealed class PostgresJobStorage : IJobStorage
 {
    private readonly IClock _clock;
    private readonly DatabaseConnection _db;
-   
-   private readonly SemaphoreSlim _migrationsLock = new(1, 1);
-   private bool _migrationsRun = false;
 
    public PostgresJobStorageConfiguration Configuration { get; }
 
@@ -54,8 +35,6 @@ internal sealed class PostgresJobStorage : IJobStorage
 
    public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
    {
-      await EnsureMigrationsRunAsync(ct);
-      
       var jobData = items.Select(JobData.FromJobStoreItem);
 
       foreach (var job in jobData)
@@ -78,7 +57,8 @@ internal sealed class PostgresJobStorage : IJobStorage
                { "cron_expression", job.CronExpression },
                { "job_name", job.JobName },
                { "job_group", job.JobGroup },
-               { "perform_at", job.PerformAt }
+               { "perform_at", job.PerformAt },
+               { "instance_id", Configuration.InstanceId }
             }
          );
       }
@@ -90,8 +70,6 @@ internal sealed class PostgresJobStorage : IJobStorage
    {
       try
       {
-         await EnsureMigrationsRunAsync(ct);
-      
          while (true)
          {
             var now = _clock.UtcNow;
@@ -99,20 +77,22 @@ internal sealed class PostgresJobStorage : IJobStorage
             var selectedJob = await _db.Dapper.QueryFirstOrDefaultAsync<JobData>(
                """
                UPDATE mvdmio.jobs
-               SET started_at = :now
+               SET started_at = :now,
+                   started_by = :instance_id
                WHERE id = (
                   SELECT id
                   FROM mvdmio.jobs
                   WHERE perform_at <= :now
                     AND started_at IS NULL
-                  ORDER BY perform_at ASC, created_at ASC
+                  ORDER BY perform_at, created_at
                   LIMIT 1
                   FOR UPDATE SKIP LOCKED
                )
-               RETURNING id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at
+               RETURNING id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, started_by
                """,
                new Dictionary<string, object?> {
-                  { "now", now }
+                  { "now", now },
+                  { "instance_id", Configuration.InstanceId }
                }
             );
 
@@ -161,8 +141,6 @@ internal sealed class PostgresJobStorage : IJobStorage
 
    public async Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default)
    {
-      await EnsureMigrationsRunAsync(ct);
-      
       await _db.Dapper.ExecuteAsync(
          """
          DELETE FROM mvdmio.jobs
@@ -175,15 +153,13 @@ internal sealed class PostgresJobStorage : IJobStorage
    }
 
    public async Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
-   {
-      await EnsureMigrationsRunAsync(ct);
-      
+   {      
       var jobData = await _db.Dapper.QueryAsync<JobData>(
          """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, started_by
          FROM mvdmio.jobs
          WHERE started_at IS NULL
-         ORDER BY perform_at ASC, created_at ASC
+         ORDER BY perform_at, created_at
          """
       );
       
@@ -192,39 +168,15 @@ internal sealed class PostgresJobStorage : IJobStorage
 
    public async Task<IEnumerable<JobStoreItem>> GetInProgressJobsAsync(CancellationToken ct = default)
    {
-      await EnsureMigrationsRunAsync(ct);
-      
       var jobData = await _db.Dapper.QueryAsync<JobData>(
          """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, started_by
          FROM mvdmio.jobs
          WHERE started_at IS NOT NULL
-         ORDER BY perform_at ASC, created_at ASC
+         ORDER BY perform_at, created_at
          """
       );
       
       return jobData.Select(x => x.ToJobStoreItem());
-   }
-   
-   private async Task EnsureMigrationsRunAsync(CancellationToken ct = default)
-   {
-      if(_migrationsRun)
-         return;
-
-      await _migrationsLock.WaitAsync(ct);
-
-      if(_migrationsRun)
-         return;
-      
-      try
-      {
-         var migrationRunner = new DatabaseMigrator(_db, GetType().Assembly);
-         await migrationRunner.MigrateDatabaseToLatestAsync(ct);
-         _migrationsRun = true;
-      }
-      finally
-      {
-         _migrationsLock.Release();
-      }
    }
 }

@@ -16,6 +16,7 @@ internal sealed class JobData
    public required string? JobGroup { get; init; }
    public required DateTime PerformAt { get; init; }
    public DateTime? StartedAt { get; set; }
+   public string? StartedBy { get; set; }
 
    public static JobData FromJobStoreItem(JobStoreItem jobStoreItem)
    {

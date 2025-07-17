@@ -4,6 +4,7 @@ using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
+using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
 using mvdmio.ASP.Jobs.Utils;
 using mvdmio.Database.PgSQL;
 
@@ -51,14 +52,22 @@ public class JobRunnerConfiguration
    {
       services.AddSingleton<IClock>(SystemClock.Instance);
       
-      if (JobStorage is null or InMemoryJobStorage)
+      if (JobStorage is null)
       {
-         services.AddSingleton<IJobStorage>(JobStorage ?? new InMemoryJobStorage());   
+         services.AddSingleton<IJobStorage>(new InMemoryJobStorage());   
       }
-      else if (JobStorage is PostgresJobStorage postgres)
+      else if (JobStorage is InMemoryJobStorage inMemoryJobStorage)
       {
-         services.AddSingleton<IJobStorage>(postgres);
-         services.AddSingleton<PostgresJobStorageConfiguration>(postgres.Configuration);
+         services.AddSingleton<IJobStorage>(inMemoryJobStorage);
+      }
+      else if (JobStorage is PostgresJobStorage postgresJobStorage)
+      {
+         services.AddSingleton<IJobStorage>(postgresJobStorage);
+         services.AddSingleton(postgresJobStorage.Configuration);
+         services.AddSingleton<PostgresJobInstanceRepository>();
+         
+         services.AddHostedService<PostgresInitializationService>();
+         services.AddHostedService<PostgresCleanupService>();
       }
 
       if (IsSchedulerEnabled)
