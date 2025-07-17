@@ -11,7 +11,7 @@ using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Integration.Postgres;
 
-public sealed class PostgresJobInstanceRepositoryTests
+public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
 {
    private readonly DatabaseConnection _db;
    private readonly TestClock _clock;
@@ -27,12 +27,22 @@ public sealed class PostgresJobInstanceRepositoryTests
       _clock = new TestClock();
       _configuration = new PostgresJobStorageConfiguration {
          InstanceId = "test-instance",
-         DatabaseConnection = fixture.DatabaseConnection
+         DatabaseConnection = _db
       }; 
       
       _repository = new PostgresJobInstanceRepository(_configuration, _clock);
    }
+   
+   public async ValueTask InitializeAsync()
+   {
+      await _db.BeginTransactionAsync();
+   }
 
+   public async ValueTask DisposeAsync()
+   {
+      await _db.RollbackTransactionAsync();
+   }
+   
    [Fact]
    public async Task RegisterInstance_ShouldInsertNewInstance_WhenInstanceIsNotRegisteredYet()
    {
@@ -169,8 +179,6 @@ public sealed class PostgresJobInstanceRepositoryTests
    {
       // Arrange
       await _repository.RegisterInstance(CancellationToken);
-      
-      // Simulate a job started by this instance
       await InsertStartedJob(_clock.UtcNow, _configuration.InstanceId);
       
       // Act

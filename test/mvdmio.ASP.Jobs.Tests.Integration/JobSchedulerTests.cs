@@ -6,6 +6,7 @@ using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
+using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using mvdmio.Database.PgSQL;
@@ -33,17 +34,19 @@ public abstract class JobSchedulerTests
    public sealed class PostgresJobSchedulerTests : JobSchedulerTests, IAsyncLifetime
    {
       private readonly DatabaseConnection _db;
-      
+      private readonly PostgresJobInstanceRepository _jobInstanceRepository;
+
       public PostgresJobSchedulerTests(PostgresFixture fixture)
       {
          _db = fixture.DatabaseConnection;
+         
+         var configuration = new PostgresJobStorageConfiguration {
+            InstanceId = "test-instance",
+            DatabaseConnection = _db
+         };
 
-         _jobStorage = new PostgresJobStorage(
-            new PostgresJobStorageConfiguration {
-               DatabaseConnection = _db
-            },
-            _clock
-         ); 
+         _jobInstanceRepository = new PostgresJobInstanceRepository(configuration, _clock);
+         _jobStorage = new PostgresJobStorage(configuration, _clock); 
          
          _scheduler = new JobScheduler(_services, _jobStorage, _clock);
       }
@@ -51,6 +54,7 @@ public abstract class JobSchedulerTests
       public async ValueTask InitializeAsync()
       {
          await _db.BeginTransactionAsync();
+         await _jobInstanceRepository.RegisterInstance(CancellationToken);
       }
 
       public async ValueTask DisposeAsync()

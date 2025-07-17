@@ -2,6 +2,7 @@
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
+using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using mvdmio.Database.PgSQL;
@@ -13,9 +14,10 @@ public sealed class PostgresStorageTests : IAsyncLifetime
 {
    private readonly DatabaseConnection _db;
    private readonly TestClock _clock;
-   
-   private readonly PostgresJobStorage _storage;
    private readonly CancellationTokenSource _cts;
+   private readonly PostgresJobInstanceRepository _jobInstanceRepository;
+
+   private readonly PostgresJobStorage _storage;
    
    private CancellationToken CancellationToken => _cts.Token;
 
@@ -25,12 +27,14 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       _clock = new TestClock();
       _db = fixture.DatabaseConnection;
       
-      _storage = new PostgresJobStorage(
-         new PostgresJobStorageConfiguration {
-            DatabaseConnection = _db
-         },
-         _clock
-      );
+      var configuration = new PostgresJobStorageConfiguration {
+         InstanceId = "test-instance",
+         DatabaseConnection = _db
+      };
+
+      _jobInstanceRepository = new PostgresJobInstanceRepository(configuration, _clock);
+      
+      _storage = new PostgresJobStorage(configuration,_clock);
       
       _cts.CancelAfter(TimeSpan.FromSeconds(1));
    }
@@ -38,6 +42,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    public async ValueTask InitializeAsync()
    {
       await _db.BeginTransactionAsync();
+      await _jobInstanceRepository.RegisterInstance(CancellationToken);
    }
 
    public async ValueTask DisposeAsync()
