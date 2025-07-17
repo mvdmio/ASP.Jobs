@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
+using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using NSubstitute;
 using Xunit;
@@ -29,17 +30,20 @@ public sealed class JobRunnerServiceTests
       _random = new Random(1);
 
       var services = new JobTestServices().Services;
-
+      
       _clock = new TestClock();
       
       _jobStorage = new InMemoryJobStorage();
       var configuration = new JobConfiguration {
          JobRunnerThreadsCount = 10
       };
+
+      services.AddSingleton<IJobStorage>(_jobStorage);
+      
       var loggerFactory = new NullLoggerFactory();
       
       _scheduler = new JobScheduler(services.BuildServiceProvider(), _jobStorage, _clock);
-      _runner = new JobRunnerService(services.BuildServiceProvider(), _jobStorage, Options.Create(configuration), loggerFactory.CreateLogger<JobRunnerService>());
+      _runner = new JobRunnerService(services.BuildServiceProvider(), Options.Create(configuration), loggerFactory.CreateLogger<JobRunnerService>());
    }
 
    [Fact]
@@ -215,8 +219,6 @@ public sealed class JobRunnerServiceTests
 
    private async Task WaitForAllJobsToFinishAsync()
    {
-      var startTime = Stopwatch.GetTimestamp();
-      
       do
       {
          var scheduledJobs = await _jobStorage.GetScheduledJobsAsync(CancellationToken);

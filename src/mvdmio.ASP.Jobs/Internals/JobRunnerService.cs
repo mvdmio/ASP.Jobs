@@ -17,17 +17,17 @@ internal sealed class JobRunnerService : BackgroundService
    // OpenTelemetry tracing setup
    private static readonly ActivitySource _activitySource = new("mvdmio.ASP.Jobs");
    
-   private readonly IJobStorage _jobStorage;
    private readonly IOptions<JobConfiguration> _options;
    private readonly ILogger<JobRunnerService> _logger;
    private readonly IServiceProvider _services;
 
+   private IJobStorage _jobStorage = null!;
+   
    private JobConfiguration Configuration => _options.Value;
 
-   public JobRunnerService(IServiceProvider services, IJobStorage jobStorage, IOptions<JobConfiguration> options, ILogger<JobRunnerService> logger)
+   public JobRunnerService(IServiceProvider services, IOptions<JobConfiguration> options, ILogger<JobRunnerService> logger)
    {
       _services = services;
-      _jobStorage = jobStorage;
       _options = options;
       _logger = logger;
    }
@@ -37,8 +37,15 @@ internal sealed class JobRunnerService : BackgroundService
       try
       {
          _logger.LogInformation("Starting job runner service on {ThreadCount} threads.", Configuration.JobRunnerThreadsCount);
+         
+         // Retrieve scoped services
+         var scope = _services.CreateScope();
+         _jobStorage = scope.ServiceProvider.GetRequiredService<IJobStorage>();
+         
+         // Run job threads
          var jobRunnerThreads = Enumerable.Range(0, Configuration.JobRunnerThreadsCount).Select(_ => PerformAvailableJobsAsync(stoppingToken));
          await Task.WhenAll(jobRunnerThreads);
+         
          _logger.LogInformation("Shutting down job runner service.");
       }
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
