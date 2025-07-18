@@ -16,6 +16,11 @@ public sealed class PostgresJobStorageConfiguration
    public string InstanceId { get; internal set; } = string.IsNullOrEmpty(Environment.MachineName) ? Guid.NewGuid().ToString() : Environment.MachineName;
    
    /// <summary>
+   ///   The name of the application. Used so that only jobs from the same application are processed by this instance.
+   /// </summary>
+   public required string ApplicationName { get; set; }
+   
+   /// <summary>
    ///    The database connection to use for the job storage.
    /// </summary>
    public required DatabaseConnection DatabaseConnection { get; set; }

@@ -35,15 +35,15 @@ internal sealed class PostgresJobStorage : IJobStorage
 
    public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
    {
-      var jobData = items.Select(JobData.FromJobStoreItem);
+      var jobData = items.Select(x => JobData.FromJobStoreItem(Configuration.ApplicationName, x));
 
       foreach (var job in jobData)
       {
          await _db.Dapper.ExecuteAsync(
             """
-            INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at)
-            VALUES (:id, :job_type, :parameters_json, :parameters_type, :cron_expression, :job_name, :job_group, :perform_at)
-            ON CONFLICT (job_name) WHERE started_at IS NULL 
+            INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at)
+            VALUES (:id, :job_type, :parameters_json, :parameters_type, :cron_expression, :application_name, :job_name, :job_group, :perform_at)
+            ON CONFLICT (application_name, job_name) WHERE started_at IS NULL 
             DO UPDATE SET
                 id = EXCLUDED.id,
                 parameters_json = EXCLUDED.parameters_json,
@@ -55,6 +55,7 @@ internal sealed class PostgresJobStorage : IJobStorage
                { "parameters_json", new TypedQueryParameter(job.ParametersJson, NpgsqlDbType.Jsonb ) },
                { "parameters_type", job.ParametersType },
                { "cron_expression", job.CronExpression },
+               { "application_name", job.ApplicationName },
                { "job_name", job.JobName },
                { "job_group", job.JobGroup },
                { "perform_at", job.PerformAt },
@@ -82,17 +83,19 @@ internal sealed class PostgresJobStorage : IJobStorage
                WHERE id = (
                   SELECT id
                   FROM mvdmio.jobs
-                  WHERE perform_at <= :now
+                  WHERE application_name = :application_name
+                    AND perform_at <= :now
                     AND started_at IS NULL
                   ORDER BY perform_at, created_at
                   LIMIT 1
                   FOR UPDATE SKIP LOCKED
                )
-               RETURNING id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, started_by
+               RETURNING id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by
                """,
                new Dictionary<string, object?> {
                   { "now", now },
-                  { "instance_id", Configuration.InstanceId }
+                  { "instance_id", Configuration.InstanceId },
+                  { "application_name", Configuration.ApplicationName }
                }
             );
 
@@ -156,7 +159,7 @@ internal sealed class PostgresJobStorage : IJobStorage
    {      
       var jobData = await _db.Dapper.QueryAsync<JobData>(
          """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, started_by
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by
          FROM mvdmio.jobs
          WHERE started_at IS NULL
          ORDER BY perform_at, created_at
@@ -170,7 +173,7 @@ internal sealed class PostgresJobStorage : IJobStorage
    {
       var jobData = await _db.Dapper.QueryAsync<JobData>(
          """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, started_by
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by
          FROM mvdmio.jobs
          WHERE started_at IS NOT NULL
          ORDER BY perform_at, created_at

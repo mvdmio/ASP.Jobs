@@ -27,6 +27,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       _clock = new TestClock();
       _configuration = new PostgresJobStorageConfiguration {
          InstanceId = "test-instance",
+         ApplicationName = "test-application",
          DatabaseConnection = _db
       }; 
       
@@ -223,8 +224,8 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
    {
       await _db.Dapper.ExecuteAsync(
          """
-         INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, perform_at, started_at, started_by)
-         VALUES (:id, :job_type, :parameters_json, :parameters_type, :cron_expression, :job_name, :job_group, :perform_at, :started_at, :started_by)
+         INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by)
+         VALUES (:id, :job_type, :parameters_json, :parameters_type, :cron_expression, :application_name, :job_name, :job_group, :perform_at, :started_at, :started_by)
          """,
          new Dictionary<string, object?> {
             { "id", Guid.NewGuid() },
@@ -232,6 +233,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
             { "parameters_json", new TypedQueryParameter("{}", NpgsqlDbType.Jsonb) },
             { "parameters_type", typeof(TestJob.Parameters).AssemblyQualifiedName },
             { "cron_expression", null },
+            { "application_name", _configuration.ApplicationName },
             { "job_name", "TestJobName" },
             { "job_group", "TestJobGroup" },
             { "perform_at", _clock.UtcNow },

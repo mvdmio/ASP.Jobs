@@ -42,6 +42,7 @@ public abstract class JobSchedulerTests
          
          var configuration = new PostgresJobStorageConfiguration {
             InstanceId = "test-instance",
+            ApplicationName = "test-application",
             DatabaseConnection = _db
          };
 

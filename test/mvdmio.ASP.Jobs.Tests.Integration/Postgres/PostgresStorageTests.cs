@@ -8,7 +8,7 @@ using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using mvdmio.Database.PgSQL;
 using Xunit;
 
-namespace mvdmio.ASP.Jobs.Tests.Integration;
+namespace mvdmio.ASP.Jobs.Tests.Integration.Postgres;
 
 public sealed class PostgresStorageTests : IAsyncLifetime
 {
@@ -29,6 +29,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       
       var configuration = new PostgresJobStorageConfiguration {
          InstanceId = "test-instance",
+         ApplicationName = "test-application",
          DatabaseConnection = _db
       };
 

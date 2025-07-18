@@ -28,13 +28,14 @@ internal sealed class PostgresJobInstanceRepository
    {
       await Db.Dapper.ExecuteAsync(
          """
-         INSERT INTO mvdmio.job_instances (instance_id, last_seen_at)
-         VALUES (:instanceId, :lastSeenAt)
+         INSERT INTO mvdmio.job_instances (instance_id, application_name, last_seen_at)
+         VALUES (:instanceId, :applicationName, :lastSeenAt)
          ON CONFLICT (instance_id) DO UPDATE
          SET last_seen_at = EXCLUDED.last_seen_at
          """,
          new Dictionary<string, object?> {
             { "instanceId", InstanceId },
+            { "applicationName", _configuration.ApplicationName },
             { "lastSeenAt", _clock.UtcNow }
          }
       );

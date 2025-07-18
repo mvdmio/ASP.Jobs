@@ -12,13 +12,14 @@ internal sealed class JobData
    public required string ParametersType { get; init; }
    public required string ParametersJson { get; init; }
    public required string? CronExpression { get; init; }
+   public required string ApplicationName { get; init; }
    public required string JobName { get; init; }
    public required string? JobGroup { get; init; }
    public required DateTime PerformAt { get; init; }
    public DateTime? StartedAt { get; set; }
    public string? StartedBy { get; set; }
 
-   public static JobData FromJobStoreItem(JobStoreItem jobStoreItem)
+   public static JobData FromJobStoreItem(string applicationName, JobStoreItem jobStoreItem)
    {
       return new JobData {
          Id = jobStoreItem.JobId,
@@ -26,6 +27,7 @@ internal sealed class JobData
          ParametersType = jobStoreItem.Parameters.GetType().AssemblyQualifiedName!,
          ParametersJson = JsonSerializer.Serialize(jobStoreItem.Parameters),
          CronExpression = jobStoreItem.CronExpression?.ToString(),
+         ApplicationName = applicationName,
          JobName = jobStoreItem.Options.JobName,
          JobGroup = jobStoreItem.Options.Group,
          PerformAt = jobStoreItem.PerformAt,

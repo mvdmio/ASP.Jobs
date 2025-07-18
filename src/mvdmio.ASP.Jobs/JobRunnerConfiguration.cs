@@ -39,9 +39,12 @@ public class JobRunnerConfiguration
    /// <summary>
    ///    Use <see cref="PostgresJobStorage" /> as the job storage and use the given connection string to connect to the database.
    /// </summary>
-   public void UsePostgresStorage(string connectionString)
+   /// <param name="applicationName">The name of the application. This makes sure that the current instance only picks up jobs from the same application. Useful for scenarios where the same database is used for multiple different applications.</param>
+   /// <param name="connectionString">The connection string to the Postgres Database to use for storing jobs</param>
+   public void UsePostgresStorage(string applicationName, string connectionString)
    {
       var postgresConfiguration = new PostgresJobStorageConfiguration {
+         ApplicationName = applicationName,
          DatabaseConnection = new DatabaseConnectionFactory().ForConnectionString(connectionString)
       };
       
