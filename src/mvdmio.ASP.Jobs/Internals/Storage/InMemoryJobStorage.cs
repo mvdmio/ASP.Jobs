@@ -146,9 +146,18 @@ internal sealed class InMemoryJobStorage : IJobStorage
 
    private async Task SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(DateTime now, CancellationToken ct)
    {
-      var candidates = _scheduledJobs.Values.Where(x => x.PerformAt > now).ToList();
+      await _jobQueueLock.WaitAsync(ct);
+      List<JobStoreItem> candidates;
+      try
+      {
+         candidates = _scheduledJobs.Values.Where(x => x.PerformAt > now).ToList();
+      }
+      finally
+      {
+         _jobQueueLock.Release();
+      }
+      
       TimeSpan? timeUntilNextPerformAt = candidates.Count > 0 ? candidates.Min(x => x.PerformAt) - now : null;
-
       if (timeUntilNextPerformAt.HasValue && timeUntilNextPerformAt.Value <= TimeSpan.Zero)
          return;
 

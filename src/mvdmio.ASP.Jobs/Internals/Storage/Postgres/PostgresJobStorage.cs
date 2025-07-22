@@ -112,36 +112,6 @@ internal sealed class PostgresJobStorage : IJobStorage
       }
    }
 
-   private async Task SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(DateTime now, CancellationToken ct)
-   {
-      var minPerformAt = await _db.Dapper.QueryFirstOrDefaultAsync<DateTime?>(
-         """
-         SELECT MIN(perform_at)
-         FROM mvdmio.jobs
-         WHERE started_at IS NULL
-         """
-      );
-         
-      TimeSpan? timeUntilNextPerformAt = minPerformAt.HasValue ? minPerformAt.Value - now : null;
-
-      if (timeUntilNextPerformAt.HasValue && timeUntilNextPerformAt.Value <= TimeSpan.Zero)
-         return;
-         
-      await _db.Dapper.ExecuteAsync("LISTEN jobs_updated");
-
-      if (timeUntilNextPerformAt.HasValue)
-      {
-         await Task.WhenAny(
-            Task.Delay(timeUntilNextPerformAt.Value, ct),
-            _db.Connection.WaitAsync(ct)
-         );   
-      }
-      else
-      {
-         await _db.Connection.WaitAsync(ct);
-      }
-   }
-
    public async Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default)
    {
       await _db.Dapper.ExecuteAsync(
@@ -181,5 +151,35 @@ internal sealed class PostgresJobStorage : IJobStorage
       );
       
       return jobData.Select(x => x.ToJobStoreItem());
+   }
+
+   private async Task SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(DateTime now, CancellationToken ct)
+   {
+      var minPerformAt = await _db.Dapper.QueryFirstOrDefaultAsync<DateTime?>(
+         """
+         SELECT MIN(perform_at)
+         FROM mvdmio.jobs
+         WHERE started_at IS NULL
+         """
+      );
+         
+      TimeSpan? timeUntilNextPerformAt = minPerformAt.HasValue ? minPerformAt.Value - now : null;
+
+      if (timeUntilNextPerformAt.HasValue && timeUntilNextPerformAt.Value <= TimeSpan.Zero)
+         return;
+         
+      await _db.Dapper.ExecuteAsync("LISTEN jobs_updated");
+
+      if (timeUntilNextPerformAt.HasValue)
+      {
+         await Task.WhenAny(
+            Task.Delay(timeUntilNextPerformAt.Value, ct),
+            _db.Connection.WaitAsync(ct)
+         );   
+      }
+      else
+      {
+         await _db.Connection.WaitAsync(ct);
+      }
    }
 }
