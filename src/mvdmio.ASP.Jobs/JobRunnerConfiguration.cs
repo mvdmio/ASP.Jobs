@@ -1,4 +1,5 @@
-﻿using JetBrains.Annotations;
+﻿using System;
+using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
@@ -16,8 +17,10 @@ namespace mvdmio.ASP.Jobs;
 [PublicAPI]
 public class JobRunnerConfiguration
 {
+   private Action<JobConfiguration> _configurationAction = _ => {};
+   
    internal IJobStorage? JobStorage { get; set; }
-
+   
    /// <summary>
    ///    Flag to enable or disable the job scheduler. Default to true.
    /// </summary>
@@ -27,7 +30,7 @@ public class JobRunnerConfiguration
    ///    Flag to enable or disable the job runner. Default to true.
    /// </summary>
    public bool IsRunnerEnabled { get; set; } = true;
-
+   
    /// <summary>
    ///    Use <see cref="InMemoryJobStorage" /> as the job storage.
    /// </summary>
@@ -51,9 +54,18 @@ public class JobRunnerConfiguration
       JobStorage = new PostgresJobStorage(postgresConfiguration, SystemClock.Instance);
    }
 
+   /// <summary>
+   ///   Configure the job system.
+   /// </summary>
+   public void UseConfiguration(Action<JobConfiguration> action)
+   {
+      _configurationAction = action;
+   }
+   
    internal void SetupServices(IServiceCollection services)
    {
       services.AddSingleton<IClock>(SystemClock.Instance);
+      services.Configure(_configurationAction);
       
       if (JobStorage is null)
       {
