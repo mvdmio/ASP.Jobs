@@ -14,14 +14,14 @@ public static class DependencyInjectionExtensions
    /// <summary>
    ///    Add the jobs framework to the service collection. Can be configured with the <paramref name="configure" /> action.
    /// </summary>
-   public static void AddJobs(this IServiceCollection services, Action<JobRunnerConfiguration>? configure = null)
+   public static void AddJobs(this IServiceCollection services, Action<JobConfigurationBuilder>? configure = null)
    {
       // Build the job runner configuration.
-      var configuration = new JobRunnerConfiguration();
-      configure?.Invoke(configuration);
+      var configurationBuilder = new JobConfigurationBuilder();
+      configure?.Invoke(configurationBuilder);
 
       // Let the configuration register the configured services.
-      configuration.SetupServices(services);
+      configurationBuilder.SetupServices(services);
    }
 
    /// <summary>

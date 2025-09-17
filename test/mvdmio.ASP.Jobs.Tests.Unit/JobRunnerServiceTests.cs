@@ -34,7 +34,7 @@ public sealed class JobRunnerServiceTests
       _clock = new TestClock();
       
       _jobStorage = new InMemoryJobStorage();
-      var configuration = new JobConfiguration {
+      var configuration = new JobRunnerOptions {
          JobRunnerThreadsCount = 10
       };
 

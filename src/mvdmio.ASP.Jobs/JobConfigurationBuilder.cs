@@ -15,9 +15,9 @@ namespace mvdmio.ASP.Jobs;
 ///    Configuration options for the job runner.
 /// </summary>
 [PublicAPI]
-public class JobRunnerConfiguration
+public class JobConfigurationBuilder
 {
-   private Action<JobConfiguration> _configurationAction = _ => {};
+   private Action<JobRunnerOptions> _optionsBuilder = _ => {};
    
    internal IJobStorage? JobStorage { get; set; }
    
@@ -57,15 +57,15 @@ public class JobRunnerConfiguration
    /// <summary>
    ///   Configure the job system.
    /// </summary>
-   public void UseConfiguration(Action<JobConfiguration> action)
+   public void UseConfiguration(Action<JobRunnerOptions> action)
    {
-      _configurationAction = action;
+      _optionsBuilder = action;
    }
    
    internal void SetupServices(IServiceCollection services)
    {
       services.AddSingleton<IClock>(SystemClock.Instance);
-      services.Configure(_configurationAction);
+      services.Configure(_optionsBuilder);
       
       if (JobStorage is null)
       {

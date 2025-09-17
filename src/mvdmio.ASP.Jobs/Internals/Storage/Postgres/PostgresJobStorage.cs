@@ -174,12 +174,12 @@ internal sealed class PostgresJobStorage : IJobStorage
       {
          await Task.WhenAny(
             Task.Delay(timeUntilNextPerformAt.Value, ct),
-            _db.Connection.WaitAsync(ct)
+            _db.WaitAsync(ct)
          );   
       }
       else
       {
-         await _db.Connection.WaitAsync(ct);
+         await _db.WaitAsync(ct);
       }
    }
 }

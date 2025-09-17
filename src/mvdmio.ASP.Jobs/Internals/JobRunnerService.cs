@@ -17,15 +17,15 @@ internal sealed class JobRunnerService : BackgroundService
    // OpenTelemetry tracing setup
    private static readonly ActivitySource _activitySource = new("mvdmio.ASP.Jobs");
    
-   private readonly IOptions<JobConfiguration> _options;
+   private readonly IOptions<JobRunnerOptions> _options;
    private readonly ILogger<JobRunnerService> _logger;
    private readonly IServiceProvider _services;
 
    private IJobStorage _jobStorage = null!;
    
-   private JobConfiguration Configuration => _options.Value;
+   private JobRunnerOptions Configuration => _options.Value;
 
-   public JobRunnerService(IServiceProvider services, IOptions<JobConfiguration> options, ILogger<JobRunnerService> logger)
+   public JobRunnerService(IServiceProvider services, IOptions<JobRunnerOptions> options, ILogger<JobRunnerService> logger)
    {
       _services = services;
       _options = options;
