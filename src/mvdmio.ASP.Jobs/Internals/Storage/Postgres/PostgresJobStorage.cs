@@ -168,18 +168,16 @@ internal sealed class PostgresJobStorage : IJobStorage
       if (timeUntilNextPerformAt.HasValue && timeUntilNextPerformAt.Value <= TimeSpan.Zero)
          return;
          
-      await _db.Dapper.ExecuteAsync("LISTEN jobs_updated");
-
       if (timeUntilNextPerformAt.HasValue)
       {
          await Task.WhenAny(
             Task.Delay(timeUntilNextPerformAt.Value, ct),
-            _db.WaitAsync(ct)
+            _db.WaitAsync("jobs_updated", ct)
          );   
       }
       else
       {
-         await _db.WaitAsync(ct);
+         await _db.WaitAsync("jobs_updated", ct);
       }
    }
 }
