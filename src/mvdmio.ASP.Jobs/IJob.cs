@@ -106,3 +106,13 @@ public abstract class Job<TProperties> : IJob
       return Task.CompletedTask;
    }
 }
+
+/// <summary>
+///   Job that does not require any parameters. Uses <see cref="EmptyJobParameters"/> as the parameters type.
+/// </summary>
+public abstract class Job : Job<EmptyJobParameters>;
+
+/// <summary>
+///   Parameters type for a job that does not require any parameters.
+/// </summary>
+public class EmptyJobParameters;
