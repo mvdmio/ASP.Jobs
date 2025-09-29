@@ -26,4 +26,9 @@ public class ScheduledJobInfo
     ///     The timestamp at which the job is scheduled to be performed.
     /// </summary>
     public required DateTime PerformAt { get; set; }
+    
+    /// <summary>
+    ///     True if the job is currently in progress, otherwise false.
+    /// </summary>
+    public required bool InProgress { get; set; }
 }

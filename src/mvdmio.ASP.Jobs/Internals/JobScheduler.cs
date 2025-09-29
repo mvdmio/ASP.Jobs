@@ -255,13 +255,23 @@ internal sealed class JobScheduler : IJobScheduler
    
    public async Task<IEnumerable<ScheduledJobInfo>> GetScheduledJobsAsync(CancellationToken ct = default)
    {
-      var scheduledJobs = await _jobStorage.GetScheduledJobsAsync(ct);
-      return scheduledJobs.Select(x => new ScheduledJobInfo {
+      var scheduledJobs = (await _jobStorage.GetScheduledJobsAsync(ct)).Select(x => new ScheduledJobInfo {
          JobId = x.JobId,
          JobType = x.JobType,
          Parameters = x.Parameters,
-         PerformAt = x.PerformAt
+         PerformAt = x.PerformAt,
+         InProgress = false
       });
+
+      var inProgressJobs = (await _jobStorage.GetInProgressJobsAsync(ct)).Select(x => new ScheduledJobInfo {
+         JobId = x.JobId,
+         JobType = x.JobType,
+         Parameters = x.Parameters,
+         PerformAt = x.PerformAt,
+         InProgress = true
+      });
+
+      return scheduledJobs.Concat(inProgressJobs);
    }
 
    private TJob GetJobFromDi<TJob, TParameters>() where TJob : Job<TParameters>
