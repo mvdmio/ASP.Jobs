@@ -241,13 +241,13 @@ internal sealed class JobScheduler : IJobScheduler
       }
    }
 
-   public async Task<bool> IsJobScheduledAsync<TJob>(CancellationToken ct = default) where TJob : Job
+   public async Task<bool> IsJobScheduledAsync<TJob>(CancellationToken ct = default) where TJob : IJob
    {
       var scheduledJobs = await GetScheduledJobsAsync(ct);
       return scheduledJobs.Any(x => x.JobType == typeof(TJob));
    }
 
-   public async Task<IEnumerable<ScheduledJobInfo>> GetScheduledJobsAsync<TJob>(CancellationToken ct = default) where TJob : Job
+   public async Task<IEnumerable<ScheduledJobInfo>> GetScheduledJobsAsync<TJob>(CancellationToken ct = default) where TJob : IJob
    {
       var scheduledJobs = await GetScheduledJobsAsync(ct);
       return scheduledJobs.Where(x => x.JobType == typeof(TJob));

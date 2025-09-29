@@ -61,12 +61,12 @@ public interface IJobScheduler
    /// <summary>
    ///   Check if any job of the specified type is currently scheduled.
    /// </summary>
-   public Task<bool> IsJobScheduledAsync<TJob>(CancellationToken ct = default) where TJob : Job;
+   public Task<bool> IsJobScheduledAsync<TJob>(CancellationToken ct = default) where TJob : IJob;
 
    /// <summary>
    ///   Retrieve the jobs of the specified type that are currently scheduled.     
    /// </summary>
-   Task<IEnumerable<ScheduledJobInfo>> GetScheduledJobsAsync<TJob>(CancellationToken ct = default) where TJob : Job;
+   Task<IEnumerable<ScheduledJobInfo>> GetScheduledJobsAsync<TJob>(CancellationToken ct = default) where TJob : IJob;
    
    /// <summary>
    ///   Retrieve the jobs that are currently scheduled.     
