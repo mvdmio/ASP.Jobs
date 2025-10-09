@@ -5,7 +5,8 @@ using mvdmio.Database.PgSQL.Migrations;
 using Testcontainers.PostgreSql;
 using Xunit;
 
-[assembly:AssemblyFixture(typeof(PostgresFixture))]
+[assembly: AssemblyFixture(typeof(PostgresFixture))]
+[assembly: CollectionBehavior(CollectionBehavior.CollectionPerAssembly, DisableTestParallelization = true)]
 
 namespace mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 
