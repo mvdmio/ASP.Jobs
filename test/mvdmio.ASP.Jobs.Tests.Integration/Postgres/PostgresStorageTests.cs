@@ -1,4 +1,5 @@
 ﻿using AwesomeAssertions;
+using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
@@ -12,12 +13,13 @@ namespace mvdmio.ASP.Jobs.Tests.Integration.Postgres;
 
 public sealed class PostgresStorageTests : IAsyncLifetime
 {
-   private readonly DatabaseConnection _db;
-   private readonly TestClock _clock;
+   private readonly PostgresFixture _fixture;
    private readonly CancellationTokenSource _cts;
-   private readonly PostgresJobInstanceRepository _jobInstanceRepository;
-
+   private readonly TestClock _clock;
+   private readonly DatabaseConnection _db;
+   
    private readonly PostgresJobStorage _storage;
+   private readonly PostgresJobInstanceRepository _jobInstanceRepository;
    
    private CancellationToken CancellationToken => _cts.Token;
 
@@ -30,25 +32,24 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       var configuration = new PostgresJobStorageConfiguration {
          InstanceId = "test-instance",
          ApplicationName = "test-application",
-         DatabaseConnection = _db
+         DatabaseConnectionString = fixture.ConnectionString
       };
 
-      _jobInstanceRepository = new PostgresJobInstanceRepository(configuration, _clock);
-      
-      _storage = new PostgresJobStorage(configuration,_clock);
-      
+      _fixture = fixture;
+      _jobInstanceRepository = new PostgresJobInstanceRepository(fixture.DatabaseConnectionFactory, Options.Create(configuration), _clock);
+      _storage = new PostgresJobStorage(fixture.DatabaseConnectionFactory, Options.Create(configuration), _clock);
       _cts.CancelAfter(TimeSpan.FromSeconds(1));
    }
    
    public async ValueTask InitializeAsync()
    {
-      await _db.BeginTransactionAsync(ct: CancellationToken);
+      await _fixture.ResetAsync();
       await _jobInstanceRepository.RegisterInstance(CancellationToken);
    }
 
-   public async ValueTask DisposeAsync()
+   public ValueTask DisposeAsync()
    {
-      await _db.RollbackTransactionAsync();
+      return ValueTask.CompletedTask;
    }
    
    [Fact]

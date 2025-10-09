@@ -15,7 +15,7 @@ namespace mvdmio.ASP.Jobs.Internals;
 internal sealed class JobRunnerService : BackgroundService
 {
    // OpenTelemetry tracing setup
-   private static readonly ActivitySource _activitySource = new("mvdmio.ASP.Jobs");
+   private static readonly ActivitySource ActivitySource = new("mvdmio.ASP.Jobs");
    
    private readonly IOptions<JobRunnerOptions> _options;
    private readonly ILogger<JobRunnerService> _logger;
@@ -102,7 +102,7 @@ internal sealed class JobRunnerService : BackgroundService
       var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
       
       // OpenTelemetry tracing
-      using var activity = _activitySource.StartActivity();
+      using var activity = ActivitySource.StartActivity();
 
       if (activity is not null)
          activity.DisplayName = $"Job: {jobBusItem.JobType.Name}";

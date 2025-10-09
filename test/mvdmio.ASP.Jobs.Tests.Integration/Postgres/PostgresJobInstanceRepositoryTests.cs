@@ -1,4 +1,5 @@
 ﻿using AwesomeAssertions;
+using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
@@ -13,6 +14,7 @@ namespace mvdmio.ASP.Jobs.Tests.Integration.Postgres;
 
 public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
 {
+   private readonly PostgresFixture _fixture;
    private readonly DatabaseConnection _db;
    private readonly TestClock _clock;
    private readonly PostgresJobStorageConfiguration _configuration;
@@ -23,25 +25,26 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
    
    public PostgresJobInstanceRepositoryTests(PostgresFixture fixture)
    {
+      _fixture = fixture;
       _db = fixture.DatabaseConnection;
       _clock = new TestClock();
       _configuration = new PostgresJobStorageConfiguration {
          InstanceId = "test-instance",
          ApplicationName = "test-application",
-         DatabaseConnection = _db
+         DatabaseConnectionString = fixture.ConnectionString
       }; 
       
-      _repository = new PostgresJobInstanceRepository(_configuration, _clock);
+      _repository = new PostgresJobInstanceRepository(fixture.DatabaseConnectionFactory, Options.Create(_configuration), _clock);
    }
    
    public async ValueTask InitializeAsync()
    {
-      await _db.BeginTransactionAsync();
+      await _fixture.ResetAsync();
    }
 
-   public async ValueTask DisposeAsync()
+   public ValueTask DisposeAsync()
    {
-      await _db.RollbackTransactionAsync();
+      return ValueTask.CompletedTask;
    }
    
    [Fact]

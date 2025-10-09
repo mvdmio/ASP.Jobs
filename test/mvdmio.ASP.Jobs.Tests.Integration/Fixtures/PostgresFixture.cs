@@ -12,15 +12,16 @@ namespace mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 public sealed class PostgresFixture : IAsyncLifetime
 {
    private readonly PostgreSqlContainer _dbContainer;
-   private readonly DatabaseConnectionFactory _databaseConnectionFactory;
-
+   
    public string ConnectionString => _dbContainer.GetConnectionString();
-   public DatabaseConnection DatabaseConnection => _databaseConnectionFactory.ForConnectionString(ConnectionString);
+   public DatabaseConnectionFactory DatabaseConnectionFactory { get; }
+   public DatabaseConnection DatabaseConnection => DatabaseConnectionFactory.ForConnectionString(ConnectionString);
    
    public PostgresFixture()
    {
-      _databaseConnectionFactory = new DatabaseConnectionFactory();
       _dbContainer = new PostgreSqlBuilder().Build();
+      
+      DatabaseConnectionFactory = new DatabaseConnectionFactory();
    }
    
    public async ValueTask InitializeAsync()
@@ -35,5 +36,11 @@ public sealed class PostgresFixture : IAsyncLifetime
    {
       await _dbContainer.StopAsync();
       await _dbContainer.DisposeAsync();
+   }
+
+   public async Task ResetAsync()
+   {
+      await DatabaseConnection.Dapper.ExecuteAsync("TRUNCATE TABLE mvdmio.jobs CASCADE");
+      await DatabaseConnection.Dapper.ExecuteAsync("TRUNCATE TABLE mvdmio.job_instances CASCADE");
    }
 }

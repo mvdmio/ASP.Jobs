@@ -1,6 +1,7 @@
 ﻿using AwesomeAssertions;
 using Cronos;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
@@ -33,34 +34,34 @@ public abstract class JobSchedulerTests
    
    public sealed class PostgresJobSchedulerTests : JobSchedulerTests, IAsyncLifetime
    {
-      private readonly DatabaseConnection _db;
+      private readonly PostgresFixture _fixture;
       private readonly PostgresJobInstanceRepository _jobInstanceRepository;
 
       public PostgresJobSchedulerTests(PostgresFixture fixture)
       {
-         _db = fixture.DatabaseConnection;
-         
+         _fixture = fixture;
+         var dbConnectionFactory = new DatabaseConnectionFactory();
          var configuration = new PostgresJobStorageConfiguration {
             InstanceId = "test-instance",
             ApplicationName = "test-application",
-            DatabaseConnection = _db
+            DatabaseConnectionString = fixture.ConnectionString
          };
 
-         _jobInstanceRepository = new PostgresJobInstanceRepository(configuration, _clock);
-         _jobStorage = new PostgresJobStorage(configuration, _clock); 
+         _jobInstanceRepository = new PostgresJobInstanceRepository(dbConnectionFactory, Options.Create(configuration), _clock);
+         _jobStorage = new PostgresJobStorage(dbConnectionFactory, Options.Create(configuration), _clock); 
          
          _scheduler = new JobScheduler(_services, _jobStorage, _clock);
       }
       
       public async ValueTask InitializeAsync()
       {
-         await _db.BeginTransactionAsync();
+         await _fixture.ResetAsync();
          await _jobInstanceRepository.RegisterInstance(CancellationToken);
       }
 
-      public async ValueTask DisposeAsync()
+      public ValueTask DisposeAsync()
       {
-         await _db.RollbackTransactionAsync();
+         return ValueTask.CompletedTask;
       }
    }
    

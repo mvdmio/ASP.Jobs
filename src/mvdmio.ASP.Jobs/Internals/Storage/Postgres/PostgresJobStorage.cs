@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
@@ -13,19 +15,23 @@ using NpgsqlTypes;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 
-internal sealed class PostgresJobStorage : IJobStorage
+internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDisposable
 {
+   private readonly DatabaseConnectionFactory _dbConnectionFactory;
+   private readonly IOptions<PostgresJobStorageConfiguration> _configuration;
    private readonly IClock _clock;
-   private readonly DatabaseConnection _db;
-
-   public PostgresJobStorageConfiguration Configuration { get; }
-
-   public PostgresJobStorage(PostgresJobStorageConfiguration configuration, IClock clock)
-   {
-      Configuration = configuration;
-      
+   
+   private PostgresJobStorageConfiguration Configuration => _configuration.Value;
+   private DatabaseConnection Db => _dbConnectionFactory.ForConnectionString(Configuration.DatabaseConnectionString);
+   
+   public PostgresJobStorage(
+      [FromKeyedServices("Jobs")] DatabaseConnectionFactory dbConnectionFactory,
+      IOptions<PostgresJobStorageConfiguration> configuration,
+      IClock clock
+   ) {
+      _configuration = configuration;
+      _dbConnectionFactory = dbConnectionFactory;
       _clock = clock;
-      _db = configuration.DatabaseConnection;
    }
 
    public Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default)
@@ -39,7 +45,7 @@ internal sealed class PostgresJobStorage : IJobStorage
 
       foreach (var job in jobData)
       {
-         await _db.Dapper.ExecuteAsync(
+         await Db.Dapper.ExecuteAsync(
             """
             INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at)
             VALUES (:id, :job_type, :parameters_json, :parameters_type, :cron_expression, :application_name, :job_name, :job_group, :perform_at)
@@ -64,18 +70,18 @@ internal sealed class PostgresJobStorage : IJobStorage
          );
       }
       
-      await _db.Dapper.ExecuteAsync("NOTIFY jobs_updated");
+      await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated");
    }
 
    public async Task<JobStoreItem?> WaitForNextJobAsync(CancellationToken ct = default)
    {
       try
       {
-         while (true)
+         while (!ct.IsCancellationRequested)
          {
             var now = _clock.UtcNow;
          
-            var selectedJob = await _db.Dapper.QueryFirstOrDefaultAsync<JobData>(
+            var selectedJob = await Db.Dapper.QueryFirstOrDefaultAsync<JobData>(
                """
                UPDATE mvdmio.jobs
                SET started_at = :now,
@@ -103,7 +109,9 @@ internal sealed class PostgresJobStorage : IJobStorage
                return selectedJob.ToJobStoreItem();
 
             await SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(now, ct);
-         }  
+         }
+
+         return null;
       }
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {
@@ -114,7 +122,7 @@ internal sealed class PostgresJobStorage : IJobStorage
 
    public async Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default)
    {
-      await _db.Dapper.ExecuteAsync(
+      await Db.Dapper.ExecuteAsync(
          """
          DELETE FROM mvdmio.jobs
          WHERE id = :id
@@ -127,7 +135,7 @@ internal sealed class PostgresJobStorage : IJobStorage
 
    public async Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
    {      
-      var jobData = await _db.Dapper.QueryAsync<JobData>(
+      var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
          SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by
          FROM mvdmio.jobs
@@ -141,7 +149,7 @@ internal sealed class PostgresJobStorage : IJobStorage
 
    public async Task<IEnumerable<JobStoreItem>> GetInProgressJobsAsync(CancellationToken ct = default)
    {
-      var jobData = await _db.Dapper.QueryAsync<JobData>(
+      var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
          SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by
          FROM mvdmio.jobs
@@ -155,7 +163,7 @@ internal sealed class PostgresJobStorage : IJobStorage
 
    private async Task SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(DateTime now, CancellationToken ct)
    {
-      var minPerformAt = await _db.Dapper.QueryFirstOrDefaultAsync<DateTime?>(
+      var minPerformAt = await Db.Dapper.QueryFirstOrDefaultAsync<DateTime?>(
          """
          SELECT MIN(perform_at)
          FROM mvdmio.jobs
@@ -172,12 +180,22 @@ internal sealed class PostgresJobStorage : IJobStorage
       {
          await Task.WhenAny(
             Task.Delay(timeUntilNextPerformAt.Value, ct),
-            _db.WaitAsync("jobs_updated", ct)
+            Db.WaitAsync("jobs_updated", ct)
          );   
       }
       else
       {
-         await _db.WaitAsync("jobs_updated", ct);
+         await Db.WaitAsync("jobs_updated", ct);
       }
+   }
+
+   public void Dispose()
+   {
+      _dbConnectionFactory.Dispose();
+   }
+
+   public async ValueTask DisposeAsync()
+   {
+      await _dbConnectionFactory.DisposeAsync();
    }
 }

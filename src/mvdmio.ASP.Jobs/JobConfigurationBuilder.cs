@@ -17,9 +17,10 @@ namespace mvdmio.ASP.Jobs;
 [PublicAPI]
 public class JobConfigurationBuilder
 {
-   private Action<JobRunnerOptions> _optionsBuilder = _ => {};
+   private Action<JobRunnerOptions> _jobRunnerOptionsBuilder = _ => {};
+   private Action<PostgresJobStorageConfiguration> _postgresConfigurationBuilder = _ => {};
    
-   internal IJobStorage? JobStorage { get; set; }
+   internal Type JobStorageType { get; set; } = typeof(InMemoryJobStorage);
    
    /// <summary>
    ///    Flag to enable or disable the job scheduler. Default to true.
@@ -36,7 +37,7 @@ public class JobConfigurationBuilder
    /// </summary>
    public void UseInMemoryStorage()
    {
-      JobStorage = new InMemoryJobStorage();
+      JobStorageType = typeof(InMemoryJobStorage);
    }
 
    /// <summary>
@@ -46,45 +47,37 @@ public class JobConfigurationBuilder
    /// <param name="connectionString">The connection string to the Postgres Database to use for storing jobs</param>
    public void UsePostgresStorage(string applicationName, string connectionString)
    {
-      var postgresConfiguration = new PostgresJobStorageConfiguration {
-         ApplicationName = applicationName,
-         DatabaseConnection = new DatabaseConnectionFactory().ForConnectionString(connectionString)
+      JobStorageType = typeof(PostgresJobStorage);
+      _postgresConfigurationBuilder = options => {
+         options.ApplicationName = applicationName;
+         options.DatabaseConnectionString = connectionString;
       };
-      
-      JobStorage = new PostgresJobStorage(postgresConfiguration, SystemClock.Instance);
    }
 
    /// <summary>
    ///   Configure the job system.
    /// </summary>
-   public void UseConfiguration(Action<JobRunnerOptions> action)
+   public void ConfigureJobRunner(Action<JobRunnerOptions> action)
    {
-      _optionsBuilder = action;
+      _jobRunnerOptionsBuilder = action;
    }
    
    internal void SetupServices(IServiceCollection services)
    {
       services.AddSingleton<IClock>(SystemClock.Instance);
-      services.Configure(_optionsBuilder);
+      services.Configure(_jobRunnerOptionsBuilder);
       
-      if (JobStorage is null)
+      services.AddSingleton(typeof(IJobStorage), JobStorageType);
+      if (JobStorageType == typeof(PostgresJobStorage))
       {
-         services.AddSingleton<IJobStorage>(new InMemoryJobStorage());   
-      }
-      else if (JobStorage is InMemoryJobStorage inMemoryJobStorage)
-      {
-         services.AddSingleton<IJobStorage>(inMemoryJobStorage);
-      }
-      else if (JobStorage is PostgresJobStorage postgresJobStorage)
-      {
-         services.AddSingleton<IJobStorage>(postgresJobStorage);
-         services.AddSingleton(postgresJobStorage.Configuration);
+         services.Configure(_postgresConfigurationBuilder);
          services.AddSingleton<PostgresJobInstanceRepository>();
+         services.AddKeyedSingleton<DatabaseConnectionFactory>("Jobs");
          
          services.AddHostedService<PostgresInitializationService>();
          services.AddHostedService<PostgresCleanupService>();
       }
-
+      
       if (IsSchedulerEnabled)
          services.AddSingleton<IJobScheduler, JobScheduler>();
 

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Utils;
 using mvdmio.Database.PgSQL;
@@ -11,15 +13,22 @@ namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
 
 internal sealed class PostgresJobInstanceRepository
 {
-   private readonly PostgresJobStorageConfiguration _configuration;
+   private readonly DatabaseConnectionFactory _dbConnectionFactory;
+   private readonly IOptions<PostgresJobStorageConfiguration> _configuration;
    private readonly IClock _clock;
 
-   // Using this pattern so that InstanceId can be updated from the tests.
-   private string InstanceId => _configuration.InstanceId;
-   private DatabaseConnection Db => _configuration.DatabaseConnection;
+   private PostgresJobStorageConfiguration Configuration => _configuration.Value;
    
-   public PostgresJobInstanceRepository(PostgresJobStorageConfiguration configuration, IClock clock)
-   {
+   // Using this pattern so that InstanceId can be updated from the tests.
+   private string InstanceId => Configuration.InstanceId;
+   private DatabaseConnection Db => _dbConnectionFactory.ForConnectionString(Configuration.DatabaseConnectionString);
+   
+   public PostgresJobInstanceRepository(
+      [FromKeyedServices("Jobs")] DatabaseConnectionFactory dbConnectionFactory,
+      IOptions<PostgresJobStorageConfiguration> configuration,
+      IClock clock
+   ) {
+      _dbConnectionFactory = dbConnectionFactory;
       _configuration = configuration;
       _clock = clock;
    }
@@ -35,7 +44,7 @@ internal sealed class PostgresJobInstanceRepository
          """,
          new Dictionary<string, object?> {
             { "instanceId", InstanceId },
-            { "applicationName", _configuration.ApplicationName },
+            { "applicationName", Configuration.ApplicationName },
             { "lastSeenAt", _clock.UtcNow }
          }
       );

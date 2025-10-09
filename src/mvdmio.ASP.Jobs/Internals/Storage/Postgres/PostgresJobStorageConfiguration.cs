@@ -23,5 +23,5 @@ public sealed class PostgresJobStorageConfiguration
    /// <summary>
    ///    The database connection to use for the job storage.
    /// </summary>
-   public required DatabaseConnection DatabaseConnection { get; set; }
+   public required string DatabaseConnectionString { get; set; }
 }
