@@ -26,7 +26,6 @@ internal sealed class PostgresInitializationService : IHostedService
    
    public async Task StartAsync(CancellationToken cancellationToken)
    {
-      await RunDbMigrations(cancellationToken);
       await _repository.RegisterInstance(cancellationToken);
    }
 
@@ -34,11 +33,5 @@ internal sealed class PostgresInitializationService : IHostedService
    {
       await _repository.ReleaseStartedJobs(cancellationToken);
       await _repository.UnregisterInstance(cancellationToken);
-   }
-
-   private async Task RunDbMigrations(CancellationToken ct = default)
-   {
-      var migrationRunner = new DatabaseMigrator(_db, GetType().Assembly);
-      await migrationRunner.MigrateDatabaseToLatestAsync(ct);
    }
 }

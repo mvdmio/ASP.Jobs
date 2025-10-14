@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
@@ -11,6 +12,7 @@ using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Utils;
 using mvdmio.Database.PgSQL;
 using mvdmio.Database.PgSQL.Dapper.QueryParameters;
+using mvdmio.Database.PgSQL.Migrations;
 using NpgsqlTypes;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
@@ -20,6 +22,9 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    private readonly DatabaseConnectionFactory _dbConnectionFactory;
    private readonly IOptions<PostgresJobStorageConfiguration> _configuration;
    private readonly IClock _clock;
+
+   private SemaphoreSlim _initializationLock = new(1, 1);
+   private bool _isInitialized;
    
    private PostgresJobStorageConfiguration Configuration => _configuration.Value;
    private DatabaseConnection Db => _dbConnectionFactory.ForConnectionString(Configuration.DatabaseConnectionString);
@@ -41,6 +46,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
    {
+      await EnsureInitializedAsync(ct);
+      
       var jobData = items.Select(x => JobData.FromJobStoreItem(Configuration.ApplicationName, x));
 
       foreach (var job in jobData)
@@ -75,6 +82,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task<JobStoreItem?> WaitForNextJobAsync(CancellationToken ct = default)
    {
+      await EnsureInitializedAsync(ct);
+      
       try
       {
          while (!ct.IsCancellationRequested)
@@ -122,6 +131,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default)
    {
+      await EnsureInitializedAsync(ct);
+      
       await Db.Dapper.ExecuteAsync(
          """
          DELETE FROM mvdmio.jobs
@@ -134,7 +145,9 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    }
 
    public async Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
-   {      
+   {
+      await EnsureInitializedAsync(ct);
+      
       var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
          SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by
@@ -149,6 +162,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task<IEnumerable<JobStoreItem>> GetInProgressJobsAsync(CancellationToken ct = default)
    {
+      await EnsureInitializedAsync(ct);
+      
       var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
          SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by
@@ -197,5 +212,32 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    public async ValueTask DisposeAsync()
    {
       await _dbConnectionFactory.DisposeAsync();
+   }
+
+   private async Task EnsureInitializedAsync(CancellationToken ct = default)
+   {
+      if(_isInitialized)
+         return;
+
+      await _initializationLock.WaitAsync(ct);
+
+      if(_isInitialized)
+         return;
+      
+      try
+      {
+         await RunDbMigrations(ct);
+      }
+      finally
+      {
+         _isInitialized = true;
+         _initializationLock.Release();
+      }
+   }
+   
+   private async Task RunDbMigrations(CancellationToken ct = default)
+   {
+      var migrationRunner = new DatabaseMigrator(Db, GetType().Assembly);
+      await migrationRunner.MigrateDatabaseToLatestAsync(ct);
    }
 }
