@@ -23,7 +23,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    private readonly IOptions<PostgresJobStorageConfiguration> _configuration;
    private readonly IClock _clock;
 
-   private SemaphoreSlim _initializationLock = new(1, 1);
+   private readonly SemaphoreSlim _initializationLock = new(1, 1);
    private bool _isInitialized;
    
    private PostgresJobStorageConfiguration Configuration => _configuration.Value;
@@ -207,11 +207,13 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    public void Dispose()
    {
       _dbConnectionFactory.Dispose();
+      _initializationLock.Dispose();
    }
 
    public async ValueTask DisposeAsync()
    {
       await _dbConnectionFactory.DisposeAsync();
+      _initializationLock.Dispose();
    }
 
    private async Task EnsureInitializedAsync(CancellationToken ct = default)
