@@ -39,7 +39,7 @@ internal sealed class JobRunnerService : BackgroundService
          _logger.LogInformation("Starting job runner service on {ThreadCount} threads.", Configuration.JobRunnerThreadsCount);
          
          // Retrieve scoped services
-         var scope = _services.CreateScope();
+         await using var scope = _services.CreateAsyncScope();
          _jobStorage = scope.ServiceProvider.GetRequiredService<IJobStorage>();
          
          // Run job threads
@@ -98,7 +98,7 @@ internal sealed class JobRunnerService : BackgroundService
    {
       var startTime = Stopwatch.GetTimestamp();
 
-      using var scope = _services.CreateScope();
+      await using var scope = _services.CreateAsyncScope();
       var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
       
       // OpenTelemetry tracing
