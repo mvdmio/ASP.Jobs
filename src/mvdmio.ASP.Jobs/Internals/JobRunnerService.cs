@@ -36,7 +36,7 @@ internal sealed class JobRunnerService : BackgroundService
    {
       try
       {
-         _logger.LogInformation("Starting job runner service on {ThreadCount} threads.", Configuration.JobRunnerThreadsCount);
+         _logger.LogInformation("Starting job runner service on {ThreadCount} threads", Configuration.JobRunnerThreadsCount);
          
          // Retrieve scoped services
          await using var scope = _services.CreateAsyncScope();
@@ -46,7 +46,7 @@ internal sealed class JobRunnerService : BackgroundService
          var jobRunnerThreads = Enumerable.Range(0, Configuration.JobRunnerThreadsCount).Select(_ => PerformAvailableJobsAsync(stoppingToken));
          await Task.WhenAll(jobRunnerThreads);
          
-         _logger.LogInformation("Shutting down job runner service.");
+         _logger.LogInformation("Shutting down job runner service");
       }
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {

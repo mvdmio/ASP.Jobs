@@ -8,13 +8,18 @@ namespace mvdmio.ASP.Jobs;
 /// <summary>
 ///    Interface for a job.
 /// </summary>
+[PublicAPI]
 public interface IJob
 {
    /// <summary>
    ///    Method called when the job is scheduled.
    ///    Use this method for any preparation work that needs to be done immediately when the job is created.
+   ///    This method may modify the properties object.
    /// </summary>
-   internal Task OnJobScheduledAsync(object properties, CancellationToken cancellationToken);
+   /// <returns>
+   ///   Modified properties object.
+   /// </returns>
+   internal Task<object> OnJobScheduledAsync(object properties, CancellationToken cancellationToken);
 
    /// <summary>
    ///    Method called to execute the job.
@@ -40,13 +45,14 @@ public interface IJob
 /// </summary>
 [PublicAPI]
 public abstract class Job<TProperties> : IJob
+   where TProperties : class, new()
 {
-   async Task IJob.OnJobScheduledAsync(object properties, CancellationToken cancellationToken)
+   async Task<object> IJob.OnJobScheduledAsync(object properties, CancellationToken cancellationToken)
    {
       if (properties is TProperties typedProperties)
-         await OnJobScheduledAsync(typedProperties, cancellationToken);
-      else
-         throw new ArgumentException($"Expected properties of type {typeof(TProperties).Name}, but got {properties.GetType().Name}.");
+         return await OnJobScheduledAsync(typedProperties, cancellationToken);
+
+      throw new ArgumentException($"Expected properties of type {typeof(TProperties).Name}, but got {properties.GetType().Name}.");
    }
 
    async Task IJob.ExecuteAsync(object properties, CancellationToken cancellationToken)
@@ -76,10 +82,14 @@ public abstract class Job<TProperties> : IJob
    /// <summary>
    ///    Method called when the job is scheduled.
    ///    Use this method for any preparation work that needs to be done immediately when the job is created.
+   ///    This method may modify the properties object.
    /// </summary>
-   public virtual Task OnJobScheduledAsync(TProperties parameters, CancellationToken cancellationToken)
+   /// <returns>
+   ///   Modified properties object.
+   /// </returns>
+   public virtual Task<TProperties> OnJobScheduledAsync(TProperties parameters, CancellationToken cancellationToken)
    {
-      return Task.CompletedTask;
+      return Task.FromResult(parameters);
    }
 
    /// <summary>
@@ -110,9 +120,11 @@ public abstract class Job<TProperties> : IJob
 /// <summary>
 ///   Job that does not require any parameters. Uses <see cref="EmptyJobParameters"/> as the parameters type.
 /// </summary>
+[PublicAPI]
 public abstract class Job : Job<EmptyJobParameters>;
 
 /// <summary>
 ///   Parameters type for a job that does not require any parameters.
 /// </summary>
+[PublicAPI]
 public class EmptyJobParameters;

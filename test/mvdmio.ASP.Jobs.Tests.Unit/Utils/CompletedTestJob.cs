@@ -2,9 +2,9 @@
 
 public class CompletedTestJob : Job<CompletedTestJob.Parameters>
 {
-   public override Task ExecuteAsync(Parameters properties, CancellationToken cancellationToken)
+   public override Task<Parameters> ExecuteAsync(Parameters properties, CancellationToken cancellationToken)
    {
-      return Task.CompletedTask;
+      return Task.FromResult(properties);
    }
 
    public class Parameters

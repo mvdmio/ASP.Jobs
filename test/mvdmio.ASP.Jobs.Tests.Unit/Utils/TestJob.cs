@@ -2,13 +2,15 @@
 
 public class TestJob : Job<TestJob.Parameters>
 {
-   public override async Task ExecuteAsync(Parameters properties, CancellationToken cancellationToken)
+   public override async Task<Parameters> ExecuteAsync(Parameters properties, CancellationToken cancellationToken)
    {
       if(properties.Delay.HasValue)
          await Task.Delay(properties.Delay.Value, cancellationToken);
       
       if (properties.ThrowOnExecute is not null)
          throw properties.ThrowOnExecute;
+
+      return properties;
    }
 
    public override Task OnJobExecutedAsync(Parameters parameters, CancellationToken cancellationToken)
