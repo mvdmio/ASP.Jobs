@@ -16,10 +16,7 @@ public interface IJob
    ///    Use this method for any preparation work that needs to be done immediately when the job is created.
    ///    This method may modify the properties object.
    /// </summary>
-   /// <returns>
-   ///   Modified properties object.
-   /// </returns>
-   internal Task<object> OnJobScheduledAsync(object properties, CancellationToken cancellationToken);
+   internal Task OnJobScheduledAsync(object properties, CancellationToken cancellationToken);
 
    /// <summary>
    ///    Method called to execute the job.
@@ -47,12 +44,12 @@ public interface IJob
 public abstract class Job<TProperties> : IJob
    where TProperties : class, new()
 {
-   async Task<object> IJob.OnJobScheduledAsync(object properties, CancellationToken cancellationToken)
+   async Task IJob.OnJobScheduledAsync(object properties, CancellationToken cancellationToken)
    {
       if (properties is TProperties typedProperties)
-         return await OnJobScheduledAsync(typedProperties, cancellationToken);
-
-      throw new ArgumentException($"Expected properties of type {typeof(TProperties).Name}, but got {properties.GetType().Name}.");
+         await OnJobScheduledAsync(typedProperties, cancellationToken);
+      else
+         throw new ArgumentException($"Expected properties of type {typeof(TProperties).Name}, but got {properties.GetType().Name}.");
    }
 
    async Task IJob.ExecuteAsync(object properties, CancellationToken cancellationToken)
@@ -87,9 +84,9 @@ public abstract class Job<TProperties> : IJob
    /// <returns>
    ///   Modified properties object.
    /// </returns>
-   public virtual Task<TProperties> OnJobScheduledAsync(TProperties parameters, CancellationToken cancellationToken)
+   public virtual Task OnJobScheduledAsync(TProperties parameters, CancellationToken cancellationToken)
    {
-      return Task.FromResult(parameters);
+      return Task.CompletedTask;
    }
 
    /// <summary>

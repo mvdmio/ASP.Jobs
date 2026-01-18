@@ -33,7 +33,7 @@ internal sealed class JobScheduler : IJobScheduler
       
       try
       {
-         parameters = await job.OnJobScheduledAsync(parameters, ct);
+         await job.OnJobScheduledAsync(parameters, ct);
          await job.ExecuteAsync(parameters, ct);
          await job.OnJobExecutedAsync(parameters, ct);
       }
@@ -78,7 +78,7 @@ internal sealed class JobScheduler : IJobScheduler
       {
          var job = await GetJobFromDiAsync<TJob, TParameters>();
 
-         parameters = await job.OnJobScheduledAsync(parameters, ct);
+         await job.OnJobScheduledAsync(parameters, ct);
          await _jobStorage.ScheduleJobAsync(
             new JobStoreItem {
                JobType = typeof(TJob),
@@ -129,7 +129,7 @@ internal sealed class JobScheduler : IJobScheduler
       {
          var job = await GetJobFromDiAsync<TJob, TParameters>();
 
-         parameters = await job.OnJobScheduledAsync(parameters, ct);
+         await job.OnJobScheduledAsync(parameters, ct);
          await _jobStorage.ScheduleJobAsync(
             new JobStoreItem {
                JobType = typeof(TJob),
@@ -166,7 +166,7 @@ internal sealed class JobScheduler : IJobScheduler
       try
       {
          var job = await GetJobFromDiAsync<TJob, TParameters>();
-         parameters = await job.OnJobScheduledAsync(parameters, ct);
+         await job.OnJobScheduledAsync(parameters, ct);
 
          var normalizedCronExpression = cronExpression.ToString().Replace(" ", string.Empty);
          var scheduleOptions = new JobScheduleOptions {
