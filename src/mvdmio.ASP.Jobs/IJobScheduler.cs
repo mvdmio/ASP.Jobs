@@ -18,63 +18,63 @@ public interface IJobScheduler
    /// </summary>
    public Task PerformNowAsync<TJob, TParameters>(TParameters parameters, CancellationToken ct = default)
       where TJob : Job<TParameters>
-      where TParameters : class, new();
+      where TParameters : class;
 
    /// <summary>
    ///    Schedule a job to be performed as soon as possible.
    /// </summary>
    public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, CancellationToken ct = default)
       where TJob : Job<TParameters>
-      where TParameters : class, new();
+      where TParameters : class;
 
    /// <summary>
    ///    Schedule multiple jobs to be performed as soon as possible.
    /// </summary>
    public Task PerformAsapAsync<TJob, TParameters>(IEnumerable<TParameters> parameters, CancellationToken ct = default)
       where TJob : Job<TParameters>
-      where TParameters : class, new();
+      where TParameters : class;
 
    /// <summary>
    ///    Schedule a job to be performed as soon as possible.
    /// </summary>
    public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions options, CancellationToken ct = default)
       where TJob : Job<TParameters>
-      where TParameters : class, new();
+      where TParameters : class;
 
    /// <summary>
    ///    Schedule a job to be performed at a given time.
    /// </summary>
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken ct = default)
       where TJob : Job<TParameters>
-      where TParameters : class, new();
+      where TParameters : class;
 
    /// <summary>
    ///    Schedule multiple jobs to be performed at a given time.
    /// </summary>
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<TParameters> parameters, CancellationToken ct = default)
       where TJob : Job<TParameters>
-      where TParameters : class, new();
+      where TParameters : class;
 
    /// <summary>
    ///    Schedule a job to be performed at a given time.
    /// </summary>
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions options, CancellationToken ct = default)
       where TJob : Job<TParameters>
-      where TParameters : class, new();
+      where TParameters : class;
 
    /// <summary>
    ///    Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
    public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken ct = default)
       where TJob : Job<TParameters>
-      where TParameters : class, new();
+      where TParameters : class;
 
    /// <summary>
    ///    Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
    public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken ct = default)
       where TJob : Job<TParameters>
-      where TParameters : class, new();
+      where TParameters : class;
    
    /// <summary>
    ///   Check if any job of the specified type is currently scheduled.

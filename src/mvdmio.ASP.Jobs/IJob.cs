@@ -42,7 +42,7 @@ public interface IJob
 /// </summary>
 [PublicAPI]
 public abstract class Job<TProperties> : IJob
-   where TProperties : class, new()
+   where TProperties : class
 {
    async Task IJob.OnJobScheduledAsync(object properties, CancellationToken cancellationToken)
    {
