@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -12,6 +12,10 @@ using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 
 namespace mvdmio.ASP.Jobs.Internals;
 
+/// <summary>
+///    Background service that continuously processes scheduled jobs.
+///    Runs multiple worker threads to execute jobs concurrently.
+/// </summary>
 internal sealed class JobRunnerService : BackgroundService
 {
    // OpenTelemetry tracing setup
@@ -25,6 +29,12 @@ internal sealed class JobRunnerService : BackgroundService
    
    private JobRunnerOptions Configuration => _options.Value;
 
+   /// <summary>
+   ///    Initializes a new instance of the <see cref="JobRunnerService"/> class.
+   /// </summary>
+   /// <param name="services">The service provider for resolving job instances.</param>
+   /// <param name="options">The job runner configuration options.</param>
+   /// <param name="logger">The logger for job runner operations.</param>
    public JobRunnerService(IServiceProvider services, IOptions<JobRunnerOptions> options, ILogger<JobRunnerService> logger)
    {
       _services = services;
@@ -32,6 +42,7 @@ internal sealed class JobRunnerService : BackgroundService
       _logger = logger;
    }
 
+   /// <inheritdoc />
    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
    {
       try

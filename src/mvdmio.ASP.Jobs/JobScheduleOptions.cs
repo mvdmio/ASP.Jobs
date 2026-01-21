@@ -1,14 +1,15 @@
-﻿using System;
+using System;
 
 namespace mvdmio.ASP.Jobs;
 
 /// <summary>
-///    Options for scheduling a job.
+///    Options for configuring how a job is scheduled.
 /// </summary>
 public class JobScheduleOptions
 {
    /// <summary>
-   ///    Name for this scheduled job. If a job with the same name is not already started it will be replaced.
+   ///    Gets or sets the unique name for this scheduled job. If a job with the same name that has not already started exists, it will be replaced.
+   ///    Defaults to a new GUID.
    /// </summary>
    public string JobName { get; set; } =
 #if NET9_0_OR_GREATER
@@ -18,8 +19,8 @@ public class JobScheduleOptions
 #endif
 
    /// <summary>
-   ///    Jobs in the same group will be executed in the order they were scheduled without running at the same time.
-   ///    Set null to not use a group. Defaults to null.
+   ///    Gets or sets the group name for this job. Jobs in the same group are executed sequentially in the order they were scheduled, preventing concurrent execution within the group.
+   ///    Set to null to not use a group. Defaults to null.
    /// </summary>
    public string? Group { get; init; }
 }

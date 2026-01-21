@@ -1,12 +1,12 @@
-﻿namespace mvdmio.ASP.Jobs;
+namespace mvdmio.ASP.Jobs;
 
 /// <summary>
-///    Configuration for the job system.
+///    Configuration options for the job runner service.
 /// </summary>
 public class JobRunnerOptions
 {
    /// <summary>
-   ///    The maximum number of threads that run jobs. Default is 5.
+   ///    Gets or sets the maximum number of concurrent threads that execute jobs. Defaults to 5.
    /// </summary>
    public int JobRunnerThreadsCount { get; set; } = 5;
 }

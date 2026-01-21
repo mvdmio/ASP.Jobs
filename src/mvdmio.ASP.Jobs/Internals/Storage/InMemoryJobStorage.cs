@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -9,6 +9,10 @@ using mvdmio.ASP.Jobs.Utils;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage;
 
+/// <summary>
+///    In-memory implementation of <see cref="IJobStorage"/> suitable for testing and single-instance deployments.
+///    Jobs are stored in memory and are lost when the application restarts.
+/// </summary>
 internal sealed class InMemoryJobStorage : IJobStorage
 {
    private readonly IClock _clock;

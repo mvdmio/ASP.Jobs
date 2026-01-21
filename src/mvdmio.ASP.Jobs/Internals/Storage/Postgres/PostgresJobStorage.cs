@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -17,6 +17,10 @@ using NpgsqlTypes;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 
+/// <summary>
+///    PostgreSQL implementation of <see cref="IJobStorage"/> for persistent job storage across multiple application instances.
+///    Supports distributed job processing with locking and notifications.
+/// </summary>
 internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDisposable
 {
    private readonly DatabaseConnectionFactory _dbConnectionFactory;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using mvdmio.ASP.Jobs.Internals;
@@ -12,7 +12,7 @@ using mvdmio.Database.PgSQL;
 namespace mvdmio.ASP.Jobs;
 
 /// <summary>
-///    Configuration options for the job runner.
+///    Builder class for configuring the job system, including storage options and runner settings.
 /// </summary>
 [PublicAPI]
 public class JobConfigurationBuilder
@@ -23,17 +23,18 @@ public class JobConfigurationBuilder
    internal Type JobStorageType { get; set; } = typeof(InMemoryJobStorage);
    
    /// <summary>
-   ///    Flag to enable or disable the job scheduler. Default to true.
+   ///    Gets or sets a value indicating whether the job scheduler is enabled. Defaults to true.
    /// </summary>
    public bool IsSchedulerEnabled { get; set; } = true;
 
    /// <summary>
-   ///    Flag to enable or disable the job runner. Default to true.
+   ///    Gets or sets a value indicating whether the job runner is enabled. Defaults to true.
    /// </summary>
    public bool IsRunnerEnabled { get; set; } = true;
    
    /// <summary>
-   ///    Use <see cref="InMemoryJobStorage" /> as the job storage.
+   ///    Configures the job system to use <see cref="InMemoryJobStorage" /> as the job storage.
+   ///    This is the default storage option and is suitable for testing or single-instance deployments.
    /// </summary>
    public void UseInMemoryStorage()
    {
@@ -41,10 +42,10 @@ public class JobConfigurationBuilder
    }
 
    /// <summary>
-   ///    Use <see cref="PostgresJobStorage" /> as the job storage and use the given connection string to connect to the database.
+   ///    Configures the job system to use <see cref="PostgresJobStorage" /> as the job storage.
    /// </summary>
-   /// <param name="applicationName">The name of the application. This makes sure that the current instance only picks up jobs from the same application. Useful for scenarios where the same database is used for multiple different applications.</param>
-   /// <param name="connectionString">The connection string to the Postgres Database to use for storing jobs</param>
+   /// <param name="applicationName">The name of the application. Ensures that the current instance only picks up jobs from the same application. Useful for scenarios where the same database is used for multiple different applications.</param>
+   /// <param name="connectionString">The connection string to the PostgreSQL database to use for storing jobs.</param>
    public void UsePostgresStorage(string applicationName, string connectionString)
    {
       JobStorageType = typeof(PostgresJobStorage);
@@ -55,8 +56,9 @@ public class JobConfigurationBuilder
    }
 
    /// <summary>
-   ///   Configure the job system.
+   ///    Configures the job runner with custom options.
    /// </summary>
+   /// <param name="action">An action to configure the <see cref="JobRunnerOptions"/>.</param>
    public void ConfigureJobRunner(Action<JobRunnerOptions> action)
    {
       _jobRunnerOptionsBuilder = action;

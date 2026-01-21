@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -12,12 +12,21 @@ using Serilog;
 
 namespace mvdmio.ASP.Jobs.Internals;
 
+/// <summary>
+///    Internal implementation of <see cref="IJobScheduler"/> that manages scheduling and querying of jobs.
+/// </summary>
 internal sealed class JobScheduler : IJobScheduler
 {
    private readonly IServiceProvider _services;
    private readonly IJobStorage _jobStorage;
    private readonly IClock _clock;
    
+   /// <summary>
+   ///    Initializes a new instance of the <see cref="JobScheduler"/> class.
+   /// </summary>
+   /// <param name="services">The service provider for resolving job instances.</param>
+   /// <param name="jobStorage">The job storage implementation.</param>
+   /// <param name="clock">The clock for time operations.</param>
    public JobScheduler(IServiceProvider services, IJobStorage jobStorage, IClock clock)
    {
       _services = services;

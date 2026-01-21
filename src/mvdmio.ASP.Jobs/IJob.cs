@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
@@ -38,8 +38,9 @@ public interface IJob
 }
 
 /// <summary>
-///    Interface for a job.
+///    Abstract base class for a job with typed properties.
 /// </summary>
+/// <typeparam name="TProperties">The type of properties passed to the job.</typeparam>
 [PublicAPI]
 public abstract class Job<TProperties> : IJob
    where TProperties : class
@@ -81,9 +82,9 @@ public abstract class Job<TProperties> : IJob
    ///    Use this method for any preparation work that needs to be done immediately when the job is created.
    ///    This method may modify the properties object.
    /// </summary>
-   /// <returns>
-   ///   Modified properties object.
-   /// </returns>
+   /// <param name="parameters">The job parameters.</param>
+   /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
    public virtual Task OnJobScheduledAsync(TProperties parameters, CancellationToken cancellationToken)
    {
       return Task.CompletedTask;
@@ -93,12 +94,18 @@ public abstract class Job<TProperties> : IJob
    ///    Method called to execute the job.
    ///    Use this method for all the work that needs to be done by the job.
    /// </summary>
+   /// <param name="parameters">The job parameters.</param>
+   /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
    public abstract Task ExecuteAsync(TProperties parameters, CancellationToken cancellationToken);
 
    /// <summary>
    ///    Method called when the job is successfully executed.
    ///    Use this method for any work that needs to be done immediately after the job has been executed.
    /// </summary>
+   /// <param name="parameters">The job parameters.</param>
+   /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
    public virtual Task OnJobExecutedAsync(TProperties parameters, CancellationToken cancellationToken)
    {
       return Task.CompletedTask;
@@ -108,6 +115,10 @@ public abstract class Job<TProperties> : IJob
    ///    Method called when the job execution throws an exception.
    ///    Use this method for any work that needs to be done when a job fails.
    /// </summary>
+   /// <param name="parameters">The job parameters.</param>
+   /// <param name="exception">The exception that was thrown during job execution.</param>
+   /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
    public virtual Task OnJobFailedAsync(TProperties parameters, Exception exception, CancellationToken cancellationToken)
    {
       return Task.CompletedTask;
