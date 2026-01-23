@@ -5,7 +5,7 @@ VisualStudioVersion = 17.12.35707.178
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mvdmio.ASP.Jobs", "src\mvdmio.ASP.Jobs\mvdmio.ASP.Jobs.csproj", "{2E3BFB1E-6BC2-461F-A198-FADCC342B29A}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{DE7DAD3E-D73C-423E-AF41-E235848B542E}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".solution", ".solution", "{DE7DAD3E-D73C-423E-AF41-E235848B542E}"
 	ProjectSection(SolutionItems) = preProject
 		License.txt = License.txt
 		.github\workflows\publish-nuget.yml = .github\workflows\publish-nuget.yml
@@ -16,6 +16,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mvdmio.ASP.Jobs.Tests.Unit", "test\mvdmio.ASP.Jobs.Tests.Unit\mvdmio.ASP.Jobs.Tests.Unit.csproj", "{5D8519A1-5A90-4C03-9B89-AED3D5CB1F69}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mvdmio.ASP.Jobs.Tests.Integration", "test\mvdmio.ASP.Jobs.Tests.Integration\mvdmio.ASP.Jobs.Tests.Integration.csproj", "{4D1D86CD-CFC0-486A-BCF5-77C94B640EC9}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{5E6656DF-E258-4FAA-B094-60054DBDAD38}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -38,5 +40,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{4D1D86CD-CFC0-486A-BCF5-77C94B640EC9} = {5E6656DF-E258-4FAA-B094-60054DBDAD38}
+		{5D8519A1-5A90-4C03-9B89-AED3D5CB1F69} = {5E6656DF-E258-4FAA-B094-60054DBDAD38}
 	EndGlobalSection
 EndGlobal
