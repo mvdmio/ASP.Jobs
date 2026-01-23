@@ -38,7 +38,8 @@ internal sealed class JobScheduler : IJobScheduler
       where TJob : Job<TParameters>
       where TParameters : class
    {
-      var job = await GetJobFromDiAsync<TJob, TParameters>();
+      await using var scope = _services.CreateAsyncScope();
+      var job = scope.ServiceProvider.GetRequiredService<TJob>();
       
       try
       {
@@ -85,7 +86,8 @@ internal sealed class JobScheduler : IJobScheduler
 
       try
       {
-         var job = await GetJobFromDiAsync<TJob, TParameters>();
+         await using var scope = _services.CreateAsyncScope();
+         var job = scope.ServiceProvider.GetRequiredService<TJob>();
 
          await job.OnJobScheduledAsync(parameters, ct);
          await _jobStorage.ScheduleJobAsync(
@@ -136,7 +138,8 @@ internal sealed class JobScheduler : IJobScheduler
 
       try
       {
-         var job = await GetJobFromDiAsync<TJob, TParameters>();
+         await using var scope = _services.CreateAsyncScope();
+         var job = scope.ServiceProvider.GetRequiredService<TJob>();
 
          await job.OnJobScheduledAsync(parameters, ct);
          await _jobStorage.ScheduleJobAsync(
@@ -174,7 +177,9 @@ internal sealed class JobScheduler : IJobScheduler
 
       try
       {
-         var job = await GetJobFromDiAsync<TJob, TParameters>();
+         await using var scope = _services.CreateAsyncScope();
+         var job = scope.ServiceProvider.GetRequiredService<TJob>();
+
          await job.OnJobScheduledAsync(parameters, ct);
 
          var normalizedCronExpression = cronExpression.ToString().Replace(" ", string.Empty);
@@ -251,14 +256,5 @@ internal sealed class JobScheduler : IJobScheduler
       });
 
       return scheduledJobs.Concat(inProgressJobs);
-   }
-
-   private async Task<TJob> GetJobFromDiAsync<TJob, TParameters>()
-      where TJob : Job<TParameters>
-      where TParameters : class
-   {
-      await using var scope = _services.CreateAsyncScope();
-      var job = scope.ServiceProvider.GetRequiredService<TJob>();
-      return job;
    }
 }
