@@ -61,7 +61,8 @@ internal sealed class PostgresJobInstanceRepository
             { "instanceId", InstanceId },
             { "applicationName", Configuration.ApplicationName },
             { "lastSeenAt", _clock.UtcNow }
-         }
+         },
+         ct: ct
       );
    }
 
@@ -79,7 +80,8 @@ internal sealed class PostgresJobInstanceRepository
          """,
          new Dictionary<string, object?> {
             { "instanceId", InstanceId }
-         }
+         },
+         ct: ct
       );
    }
 
@@ -111,7 +113,8 @@ internal sealed class PostgresJobInstanceRepository
                """,
                new Dictionary<string, object?> {
                   { "maxAgeTimestamp", _clock.UtcNow.Subtract(TimeSpan.FromMinutes(5)) }
-               }
+               },
+               ct: ct
             );
 
             if (expiredInstances.Any())
@@ -128,7 +131,8 @@ internal sealed class PostgresJobInstanceRepository
                   """,
                   new Dictionary<string, object?> {
                      { "expiredInstances", expiredInstances }
-                  }
+                  },
+                  ct: ct
                );
             }
          }
@@ -152,7 +156,8 @@ internal sealed class PostgresJobInstanceRepository
          """,
          new Dictionary<string, object?> {
             { "instanceId", InstanceId }
-         }
+         },
+         ct: ct
       );
    }
 
@@ -160,8 +165,8 @@ internal sealed class PostgresJobInstanceRepository
    ///    Retrieves all registered job processing instances.
    /// </summary>
    /// <returns>A collection of all registered instances.</returns>
-   public async Task<IEnumerable<InstanceData>> GetInstances()
+   public async Task<IEnumerable<InstanceData>> GetInstances(CancellationToken ct = default)
    {
-      return await Db.Dapper.QueryAsync<InstanceData>("SELECT instance_id, last_seen_at FROM mvdmio.job_instances");
+      return await Db.Dapper.QueryAsync<InstanceData>("SELECT instance_id, last_seen_at FROM mvdmio.job_instances", ct: ct);
    }
 }
