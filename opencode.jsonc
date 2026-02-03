@@ -1,0 +1,51 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "watcher": {
+    "ignore": [
+      "node_modules/**",
+      ".git/**",
+      "bin/**",
+      "obj/**",
+      "**/bin/**",
+      "**/obj/**",
+      "wwwroot/js/**",
+      "*.user",
+      ".vs/**",
+      ".idea/**",
+      "*.suo",
+      "*.userosscache",
+      "*.sln.docstates"
+    ]
+  },
+  "formatter": {},
+  "command": {
+    "test": {
+      "template": "Run the full test suite for the .NET monorepo.\nRun tests for all services: Auth, TranslationTools, HealthCheck, and Statistics.\nShow any failing tests and suggest fixes.",
+      "description": "Run all tests in the solution",
+      "model": "anthropic/claude-haiku-4-5"
+    },
+    "test-unit": {
+      "template": "Run only unit tests for the .NET monorepo.\nRun all tests matching pattern *.Tests.Unit.*\nShow any failing tests and suggest fixes.",
+      "description": "Run unit tests only",
+      "model": "anthropic/claude-haiku-4-5"
+    },
+    "test-integration": {
+      "template": "Run only integration tests for the .NET monorepo.\nRun all tests matching pattern *.Tests.Integration.*\nShow any failing tests and suggest fixes.",
+      "description": "Run integration tests only",
+      "model": "anthropic/claude-haiku-4-5"
+    },
+    "build": {
+      "template": "Build the entire .NET solution.\nRun 'dotnet build mvdmio.ASP.Jobs.sln' and show any build errors or warnings.",
+      "description": "Build the solution",
+      "model": "anthropic/claude-haiku-4-5"
+    }
+  },
+  "instructions": [
+    "AGENTS.md",
+    "readme.md"
+  ],
+  "compaction": {
+    "auto": true,
+    "prune": true
+  }
+}
