@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace mvdmio.ASP.Jobs.Tests.Unit.Utils;
 
@@ -10,5 +10,6 @@ public class JobTestServices
    {
       Services = new ServiceCollection();
       Services.RegisterJob<TestJob>();
+      Services.RegisterJob<ConcurrencyTrackingJob>();
    }
 }

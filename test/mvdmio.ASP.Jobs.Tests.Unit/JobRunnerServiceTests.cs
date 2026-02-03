@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using AwesomeAssertions;
 using Cronos;
@@ -35,7 +35,7 @@ public sealed class JobRunnerServiceTests
       
       _jobStorage = new InMemoryJobStorage();
       var configuration = new JobRunnerOptions {
-         JobRunnerThreadsCount = 10
+         MaxConcurrentJobs = 10
       };
 
       services.AddSingleton<IJobStorage>(_jobStorage);

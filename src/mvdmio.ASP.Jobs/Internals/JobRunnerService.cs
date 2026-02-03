@@ -1,7 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,7 +15,7 @@ namespace mvdmio.ASP.Jobs.Internals;
 
 /// <summary>
 ///    Background service that continuously processes scheduled jobs.
-///    Runs multiple worker threads to execute jobs concurrently.
+///    Uses a producer-consumer pattern with channels for efficient async job execution.
 /// </summary>
 internal sealed class JobRunnerService : BackgroundService
 {
@@ -47,15 +48,32 @@ internal sealed class JobRunnerService : BackgroundService
    {
       try
       {
-         _logger.LogInformation("Starting job runner service on {ThreadCount} threads", Configuration.JobRunnerThreadsCount);
+         _logger.LogInformation(
+            "Starting job runner service with max {MaxConcurrent} concurrent jobs and channel capacity {ChannelCapacity}", 
+            Configuration.MaxConcurrentJobs,
+            Configuration.JobChannelCapacity);
          
          // Retrieve scoped services
          await using var scope = _services.CreateAsyncScope();
          _jobStorage = scope.ServiceProvider.GetRequiredService<IJobStorage>();
          
-         // Run job threads
-         var jobRunnerThreads = Enumerable.Range(0, Configuration.JobRunnerThreadsCount).Select(_ => PerformAvailableJobsAsync(stoppingToken));
-         await Task.WhenAll(jobRunnerThreads);
+         // Create bounded channel for job items
+         var channel = Channel.CreateBounded<JobStoreItem>(
+            new BoundedChannelOptions(Configuration.JobChannelCapacity)
+            {
+               FullMode = BoundedChannelFullMode.Wait,
+               SingleReader = false,
+               SingleWriter = true
+            });
+         
+         // Create semaphore to limit concurrent job execution
+         var concurrencySemaphore = new SemaphoreSlim(Configuration.MaxConcurrentJobs);
+         
+         // Start producer and consumer tasks
+         var producerTask = ProduceJobsAsync(channel.Writer, stoppingToken);
+         var consumerTask = ConsumeJobsAsync(channel.Reader, concurrencySemaphore, stoppingToken);
+         
+         await Task.WhenAll(producerTask, consumerTask);
          
          _logger.LogInformation("Shutting down job runner service");
       }
@@ -65,43 +83,102 @@ internal sealed class JobRunnerService : BackgroundService
       }
       catch (Exception ex)
       {
-         _logger.LogError(ex, "Error while executing job runner threads");
+         _logger.LogError(ex, "Error while executing job runner service");
       }
    }
 
-   private async Task PerformAvailableJobsAsync(CancellationToken cancellationToken)
-   {
-      while (!cancellationToken.IsCancellationRequested)
-      {
-         try
-         {
-            await PerformNextJobAsync(cancellationToken);
-         }
-         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-         {
-            // Ignore cancellation exceptions; they are expected when the service is stopped.
-         }
-         catch (Exception ex)
-         {
-            _logger.LogError(ex, "Error while performing available jobs");
-         }
-      }
-   }
-
-   private async Task PerformNextJobAsync(CancellationToken cancellationToken)
+   /// <summary>
+   ///    Producer: Continuously fetches jobs from storage and writes them to the channel.
+   /// </summary>
+   private async Task ProduceJobsAsync(ChannelWriter<JobStoreItem> writer, CancellationToken ct)
    {
       try
       {
-         var jobBusItem = await _jobStorage.WaitForNextJobAsync(cancellationToken);
-         
-         if (jobBusItem is null)
-            return;
+         while (!ct.IsCancellationRequested)
+         {
+            try
+            {
+               var job = await _jobStorage.WaitForNextJobAsync(ct);
+               
+               if (job is null)
+                  continue;
+               
+               await writer.WriteAsync(job, ct);
+            }
+            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+            {
+               // Expected during shutdown
+               break;
+            }
+            catch (Exception ex)
+            {
+               _logger.LogError(ex, "Error while fetching next job from storage");
+            }
+         }
+      }
+      finally
+      {
+         writer.Complete();
+      }
+   }
 
-         await PerformJob(jobBusItem, cancellationToken);
+   /// <summary>
+   ///    Consumer: Reads jobs from the channel and executes them concurrently,
+   ///    limited by the semaphore.
+   /// </summary>
+   private async Task ConsumeJobsAsync(
+      ChannelReader<JobStoreItem> reader, 
+      SemaphoreSlim semaphore, 
+      CancellationToken ct)
+   {
+      // Track all running job tasks for graceful shutdown
+      var runningJobs = new List<Task>();
+      
+      try
+      {
+         await foreach (var job in reader.ReadAllAsync(ct))
+         {
+            // Wait for a slot to become available
+            await semaphore.WaitAsync(ct);
+            
+            // Fire off the job execution (don't await - let it run concurrently)
+            var jobTask = ExecuteJobWithSemaphoreAsync(job, semaphore, ct);
+            runningJobs.Add(jobTask);
+            
+            // Periodically clean up completed tasks to avoid memory growth
+            runningJobs.RemoveAll(t => t.IsCompleted);
+         }
       }
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {
-         // Ignore cancellation exceptions; they are expected when the service is stopped.
+         // Expected during shutdown
+      }
+      finally
+      {
+         // Wait for all running jobs to complete on shutdown
+         if (runningJobs.Count > 0)
+         {
+            _logger.LogInformation("Waiting for {Count} running jobs to complete before shutdown", runningJobs.Count);
+            await Task.WhenAll(runningJobs);
+         }
+      }
+   }
+
+   /// <summary>
+   ///    Executes a job and ensures the semaphore is released when done.
+   /// </summary>
+   private async Task ExecuteJobWithSemaphoreAsync(
+      JobStoreItem job, 
+      SemaphoreSlim semaphore, 
+      CancellationToken ct)
+   {
+      try
+      {
+         await PerformJob(job, ct);
+      }
+      finally
+      {
+         semaphore.Release();
       }
    }
 
