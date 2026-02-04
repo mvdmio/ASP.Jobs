@@ -18,7 +18,7 @@
     </PropertyGroup>
 
     <PropertyGroup Label="Package configuration">
-        <Version>4.0.1</Version>
+        <Version>4.0.2</Version>
         <Title>mvdmio.ASP.Jobs</Title>
         <Description>Job scheduling library for use in ASP.NET projects.</Description>
         <Company>mvdmio</Company>

@@ -42,6 +42,8 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
       var services = new ServiceCollection();
       services.RegisterJob<ParameterModifyingJob>();
       services.RegisterJob<InternalPropertyModifyingJob>();
+      services.RegisterJob<PrivateSetterModifyingJob>();
+      services.RegisterJob<FieldModifyingJob>();
       _services = services.BuildServiceProvider();
       
       _scheduler = new JobScheduler(_services, _storage, _clock);
@@ -137,27 +139,69 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
       storedParameters.ModifiedInOnJobScheduled.Should().Be("modified_during_scheduling");
    }
    
-   [Fact]
-   public async Task PerformAsap_InternalPropertyModificationsInOnJobScheduled_ShouldBeVisibleInExecute()
-   {
-      // Arrange
-      var parameters = new InternalPropertyModifyingJob.Parameters {
-         PublicValue = "public_original"
-      };
-      
-      // Act - Schedule the job
-      await _scheduler.PerformAsapAsync<InternalPropertyModifyingJob, InternalPropertyModifyingJob.Parameters>(parameters, CancellationToken);
-      
-      // Retrieve the job from storage (simulating what JobRunnerService does)
-      var storedJob = await _storage.WaitForNextJobAsync(CancellationToken);
-      
-      // Assert - The stored parameters should contain the modification made to the internal property in OnJobScheduledAsync
-      storedJob.Should().NotBeNull();
-      var storedParameters = storedJob!.Parameters as InternalPropertyModifyingJob.Parameters;
-      storedParameters.Should().NotBeNull();
-      storedParameters!.PublicValue.Should().Be("public_original");
-      storedParameters.InternalModifiedValue.Should().Be("modified_during_scheduling");
-   }
+    [Fact]
+    public async Task PerformAsap_InternalPropertyModificationsInOnJobScheduled_ShouldBeVisibleInExecute()
+    {
+       // Arrange
+       var parameters = new InternalPropertyModifyingJob.Parameters {
+          PublicValue = "public_original"
+       };
+       
+       // Act - Schedule the job
+       await _scheduler.PerformAsapAsync<InternalPropertyModifyingJob, InternalPropertyModifyingJob.Parameters>(parameters, CancellationToken);
+       
+       // Retrieve the job from storage (simulating what JobRunnerService does)
+       var storedJob = await _storage.WaitForNextJobAsync(CancellationToken);
+       
+       // Assert - The stored parameters should contain the modification made to the internal property in OnJobScheduledAsync
+       storedJob.Should().NotBeNull();
+       var storedParameters = storedJob!.Parameters as InternalPropertyModifyingJob.Parameters;
+       storedParameters.Should().NotBeNull();
+       storedParameters!.PublicValue.Should().Be("public_original");
+       storedParameters.InternalModifiedValue.Should().Be("modified_during_scheduling");
+    }
+    
+    [Fact]
+    public async Task PerformAsap_PrivateSetterPropertyModificationsInOnJobScheduled_ShouldBeVisibleInExecute()
+    {
+       // Arrange
+       var parameters = new PrivateSetterModifyingJob.Parameters("public_original");
+       
+       // Act - Schedule the job
+       await _scheduler.PerformAsapAsync<PrivateSetterModifyingJob, PrivateSetterModifyingJob.Parameters>(parameters, CancellationToken);
+       
+       // Retrieve the job from storage (simulating what JobRunnerService does)
+       var storedJob = await _storage.WaitForNextJobAsync(CancellationToken);
+       
+       // Assert - The stored parameters should contain the modification made to the property with private setter in OnJobScheduledAsync
+       storedJob.Should().NotBeNull();
+       var storedParameters = storedJob!.Parameters as PrivateSetterModifyingJob.Parameters;
+       storedParameters.Should().NotBeNull();
+       storedParameters!.PublicValue.Should().Be("public_original");
+       storedParameters.ModifiedValue.Should().Be("modified_during_scheduling");
+    }
+    
+    [Fact]
+    public async Task PerformAsap_FieldModificationsInOnJobScheduled_ShouldBeVisibleInExecute()
+    {
+       // Arrange
+       var parameters = new FieldModifyingJob.Parameters {
+          PublicValue = "public_original"
+       };
+       
+       // Act - Schedule the job
+       await _scheduler.PerformAsapAsync<FieldModifyingJob, FieldModifyingJob.Parameters>(parameters, CancellationToken);
+       
+       // Retrieve the job from storage (simulating what JobRunnerService does)
+       var storedJob = await _storage.WaitForNextJobAsync(CancellationToken);
+       
+       // Assert - The stored parameters should contain the modification made to the field in OnJobScheduledAsync
+       storedJob.Should().NotBeNull();
+       var storedParameters = storedJob!.Parameters as FieldModifyingJob.Parameters;
+       storedParameters.Should().NotBeNull();
+       storedParameters!.PublicValue.Should().Be("public_original");
+       storedParameters._modifiedField.Should().Be("modified_during_scheduling");
+    }
 }
 
 /// <summary>
@@ -210,5 +254,66 @@ public class InternalPropertyModifyingJob : Job<InternalPropertyModifyingJob.Par
    {
       public string? PublicValue { get; set; }
       internal string? InternalModifiedValue { get; set; }
+   }
+}
+
+/// <summary>
+///    A test job that modifies a property with a private setter during OnJobScheduledAsync.
+///    Used to verify that properties with private setters are persisted correctly with PostgreSQL storage.
+/// </summary>
+public class PrivateSetterModifyingJob : Job<PrivateSetterModifyingJob.Parameters>
+{
+   public override Task OnJobScheduledAsync(Parameters parameters, CancellationToken cancellationToken)
+   {
+      // Modify the property with private setter during scheduling
+      parameters.SetModifiedValue("modified_during_scheduling");
+      return Task.CompletedTask;
+   }
+
+   public override Task ExecuteAsync(Parameters parameters, CancellationToken cancellationToken)
+   {
+      return Task.CompletedTask;
+   }
+
+   public class Parameters
+   {
+      public Parameters() { }
+      
+      public Parameters(string publicValue)
+      {
+         PublicValue = publicValue;
+      }
+      
+      public string? PublicValue { get; set; }
+      public string? ModifiedValue { get; private set; }
+      
+      public void SetModifiedValue(string value) => ModifiedValue = value;
+   }
+}
+
+/// <summary>
+///    A test job that modifies a field during OnJobScheduledAsync.
+///    Used to verify that fields are persisted correctly with PostgreSQL storage.
+/// </summary>
+public class FieldModifyingJob : Job<FieldModifyingJob.Parameters>
+{
+   public override Task OnJobScheduledAsync(Parameters parameters, CancellationToken cancellationToken)
+   {
+      // Modify the field during scheduling
+      parameters._modifiedField = "modified_during_scheduling";
+      return Task.CompletedTask;
+   }
+
+   public override Task ExecuteAsync(Parameters parameters, CancellationToken cancellationToken)
+   {
+      return Task.CompletedTask;
+   }
+
+   public class Parameters
+   {
+      public string? PublicValue { get; set; }
+      
+      // Public field to test field serialization
+      public string? _modifiedField;
    }
 }
