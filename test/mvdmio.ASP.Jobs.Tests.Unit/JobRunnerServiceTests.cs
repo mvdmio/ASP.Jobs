@@ -1,7 +1,4 @@
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using AwesomeAssertions;
-using Cronos;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -10,7 +7,6 @@ using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
-using NSubstitute;
 using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Unit;

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,7 +5,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
 using mvdmio.Database.PgSQL;
-using mvdmio.Database.PgSQL.Migrations;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 

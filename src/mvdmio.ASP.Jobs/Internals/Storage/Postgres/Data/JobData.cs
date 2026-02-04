@@ -2,6 +2,7 @@ using System;
 using System.Text.Json;
 using Cronos;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
+using mvdmio.ASP.Jobs.Utils;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 
@@ -10,6 +11,7 @@ namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 /// </summary>
 internal sealed class JobData
 {
+
    /// <summary>
    ///    Gets the unique identifier for the job.
    /// </summary>
@@ -77,7 +79,7 @@ internal sealed class JobData
          Id = jobStoreItem.JobId,
          JobType = jobStoreItem.JobType.AssemblyQualifiedName!,
          ParametersType = jobStoreItem.Parameters.GetType().AssemblyQualifiedName!,
-         ParametersJson = JsonSerializer.Serialize(jobStoreItem.Parameters),
+         ParametersJson = JsonSerializer.Serialize(jobStoreItem.Parameters, JobParameterJsonOptions.Options),
          CronExpression = jobStoreItem.CronExpression?.ToString(),
          ApplicationName = applicationName,
          JobName = jobStoreItem.Options.JobName,
@@ -99,7 +101,7 @@ internal sealed class JobData
       return new JobStoreItem {
          JobId = Id,
          JobType = jobType,
-         Parameters = JsonSerializer.Deserialize(ParametersJson, parametersType)!,
+         Parameters = JsonSerializer.Deserialize(ParametersJson, parametersType, JobParameterJsonOptions.Options)!,
          CronExpression = ParseCronExpression(CronExpression),
          PerformAt = PerformAt,
          Options = new JobScheduleOptions {
