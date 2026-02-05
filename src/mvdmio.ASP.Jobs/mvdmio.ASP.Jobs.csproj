@@ -18,7 +18,7 @@
     </PropertyGroup>
 
     <PropertyGroup Label="Package configuration">
-        <Version>4.0.2</Version>
+        <Version>4.0.3</Version>
         <Title>mvdmio.ASP.Jobs</Title>
         <Description>Job scheduling library for use in ASP.NET projects.</Description>
         <Company>mvdmio</Company>
@@ -39,7 +39,7 @@
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.2" />
         <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.2" />
-        <PackageReference Include="mvdmio.Database.PgSQL" Version="0.7.1" />
+        <PackageReference Include="mvdmio.Database.PgSQL" Version="0.7.3" />
         <PackageReference Include="OpenTelemetry.Api" Version="1.15.0" />
         <PackageReference Include="PolySharp" Version="1.15.0">
             <PrivateAssets>all</PrivateAssets>
