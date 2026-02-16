@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
@@ -195,7 +195,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       jobs[0].StartedBy.Should().BeNull();
    }
    
-   [Fact]
+    [Fact]
    public async Task ReleaseStartedJobs_ShouldNotReleaseJobsFromOtherInstances()
    {
       // Arrange
@@ -217,13 +217,107 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       jobs[1].StartedAt.Should().Be(_clock.UtcNow);
       jobs[1].StartedBy.Should().Be("test-instance");
    }
+   
+   [Fact]
+   public async Task CleanupOldInstances_ShouldReleaseStartedJobs_WhenExpiredInstanceHasStartedJobs()
+   {
+      // Arrange
+      _configuration.InstanceId = "expired-instance";
+      _clock.UtcNow = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(10));
+      await _repository.RegisterInstance(CancellationToken);
+      await InsertStartedJob(_clock.UtcNow, "expired-instance", "job-1");
+      
+      _clock.UtcNow = DateTime.UtcNow;
+      
+      // Act
+      await _repository.CleanupOldInstances(CancellationToken);
+      
+      // Assert - the started job should be reset to unstarted
+      var jobs = await GetJobsFromDatabase();
+      jobs.Should().HaveCount(1);
+      jobs[0].JobName.Should().Be("job-1");
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+   }
+   
+   [Fact]
+   public async Task CleanupOldInstances_ShouldDeleteStaleJob_WhenUnstartedDuplicateAlreadyExists()
+   {
+      // Arrange
+      // Register an expired instance with a started job
+      _configuration.InstanceId = "expired-instance";
+      _clock.UtcNow = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(10));
+      await _repository.RegisterInstance(CancellationToken);
+      await InsertStartedJob(_clock.UtcNow, "expired-instance", "duplicate-job");
+      
+      // Insert an unstarted job with the same name (simulates CRON re-scheduling while the old one was in progress)
+      await InsertStartedJob(null, null, "duplicate-job");
+      
+      _clock.UtcNow = DateTime.UtcNow;
+      
+      // Act - should NOT throw a unique constraint violation
+      await _repository.CleanupOldInstances(CancellationToken);
+      
+      // Assert - only the unstarted job should remain; the stale in-progress one should be deleted
+      var jobs = await GetJobsFromDatabase();
+      jobs.Should().HaveCount(1);
+      jobs[0].JobName.Should().Be("duplicate-job");
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+   }
+   
+   [Fact]
+   public async Task ReleaseStartedJobs_ShouldResetJob_WhenNoUnstartedDuplicateExists()
+   {
+      // Arrange
+      await _repository.RegisterInstance(CancellationToken);
+      await InsertStartedJob(_clock.UtcNow, _configuration.InstanceId, "unique-job");
+      
+      // Act
+      await _repository.ReleaseStartedJobs(CancellationToken);
+      
+      // Assert - the job should be reset to unstarted
+      var jobs = await GetJobsFromDatabase();
+      jobs.Should().HaveCount(1);
+      jobs[0].JobName.Should().Be("unique-job");
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+   }
+   
+   [Fact]
+   public async Task ReleaseStartedJobs_ShouldDeleteStaleJob_WhenUnstartedDuplicateAlreadyExists()
+   {
+      // Arrange
+      await _repository.RegisterInstance(CancellationToken);
+      
+      // Insert a started job owned by this instance
+      await InsertStartedJob(_clock.UtcNow, _configuration.InstanceId, "duplicate-job");
+      
+      // Insert an unstarted job with the same name (simulates CRON re-scheduling)
+      await InsertStartedJob(null, null, "duplicate-job");
+      
+      // Act - should NOT throw a unique constraint violation
+      await _repository.ReleaseStartedJobs(CancellationToken);
+      
+      // Assert - only the unstarted job should remain; the stale in-progress one should be deleted
+      var jobs = await GetJobsFromDatabase();
+      jobs.Should().HaveCount(1);
+      jobs[0].JobName.Should().Be("duplicate-job");
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+   }
 
    private async Task<List<JobData>> GetJobsFromDatabase()
    {
       return (await _db.Dapper.QueryAsync<JobData>("SELECT * FROM mvdmio.jobs;")).ToList();
    }
 
-   private async Task InsertStartedJob(DateTime? startedAt, string? startedBy)
+   private Task InsertStartedJob(DateTime? startedAt, string? startedBy, string jobName = "TestJobName")
+   {
+      return InsertJob(startedAt, startedBy, jobName);
+   }
+
+   private async Task InsertJob(DateTime? startedAt, string? startedBy, string jobName)
    {
       await _db.Dapper.ExecuteAsync(
          """
@@ -237,7 +331,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
             { "parameters_type", typeof(TestJob.Parameters).AssemblyQualifiedName },
             { "cron_expression", null },
             { "application_name", _configuration.ApplicationName },
-            { "job_name", "TestJobName" },
+            { "job_name", jobName },
             { "job_group", "TestJobGroup" },
             { "perform_at", _clock.UtcNow },
             { "started_at", startedAt },

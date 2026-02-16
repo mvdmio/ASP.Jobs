@@ -121,6 +121,18 @@ internal sealed class PostgresJobInstanceRepository
             {
                await Db.Dapper.ExecuteAsync(
                   """
+                  -- Delete stale in-progress jobs where a new unstarted occurrence already exists,
+                  -- since resetting started_at to NULL would violate the partial unique index.
+                  DELETE FROM mvdmio.jobs j
+                  WHERE j.started_by = ANY(:expiredInstances)
+                    AND EXISTS (
+                       SELECT 1 FROM mvdmio.jobs j2
+                       WHERE j2.application_name = j.application_name
+                         AND j2.job_name = j.job_name
+                         AND j2.started_at IS NULL
+                    );
+                  
+                  -- Reset remaining stale in-progress jobs (no conflict possible).
                   UPDATE mvdmio.jobs
                   SET started_at = NULL, 
                       started_by = NULL
@@ -148,6 +160,19 @@ internal sealed class PostgresJobInstanceRepository
    {
       await Db.Dapper.ExecuteAsync(
          """
+         -- Delete stale in-progress jobs where a new unstarted occurrence already exists,
+         -- since resetting started_at to NULL would violate the partial unique index.
+         DELETE FROM mvdmio.jobs j
+         WHERE j.started_at IS NOT NULL
+           AND j.started_by = :instanceId
+           AND EXISTS (
+              SELECT 1 FROM mvdmio.jobs j2
+              WHERE j2.application_name = j.application_name
+                AND j2.job_name = j.job_name
+                AND j2.started_at IS NULL
+           );
+         
+         -- Reset remaining in-progress jobs (no conflict possible).
          UPDATE mvdmio.jobs
             SET started_at = NULL,
                 started_by = NULL
