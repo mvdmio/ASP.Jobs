@@ -20,8 +20,7 @@ public sealed class PostgresFixture : IAsyncLifetime
    
    public PostgresFixture()
    {
-      _dbContainer = new PostgreSqlBuilder().Build();
-      
+      _dbContainer = new PostgreSqlBuilder("postgres:18.1").Build();
       DatabaseConnectionFactory = new DatabaseConnectionFactory();
    }
    

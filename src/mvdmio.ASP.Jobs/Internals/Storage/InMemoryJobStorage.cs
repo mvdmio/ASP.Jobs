@@ -142,6 +142,28 @@ internal sealed class InMemoryJobStorage : IJobStorage
       return Task.FromResult(InProgressJobs);
    }
 
+   public async Task DeleteJobByIdAsync(Guid jobId, CancellationToken ct = default)
+   {
+      await _jobQueueLock.WaitAsync(ct);
+
+      try
+      {
+         // Try to remove from scheduled jobs
+         var scheduledJob = _scheduledJobs.Values.FirstOrDefault(x => x.JobId == jobId);
+         if (scheduledJob is not null)
+         {
+            _scheduledJobs.Remove(scheduledJob.Options.JobName);
+         }
+
+         // Try to remove from in-progress jobs
+         _inProgressJobs.Remove(jobId);
+      }
+      finally
+      {
+         _jobQueueLock.Release();
+      }
+   }
+
    private void SendWakeSignal()
    {
       _wakeWaiters.TrySetResult(null);

@@ -1,6 +1,7 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 using Cronos;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
@@ -11,6 +12,7 @@ using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using mvdmio.Database.PgSQL;
+using NSubstitute;
 using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Integration;
@@ -48,7 +50,7 @@ public abstract class JobSchedulerTests
          };
 
          _jobInstanceRepository = new PostgresJobInstanceRepository(dbConnectionFactory, Options.Create(configuration), _clock);
-         _jobStorage = new PostgresJobStorage(dbConnectionFactory, Options.Create(configuration), _clock); 
+         _jobStorage = new PostgresJobStorage(dbConnectionFactory, Options.Create(configuration), Substitute.For<ILogger<PostgresJobStorage>>(), _clock);
          
          _scheduler = new JobScheduler(_services, _jobStorage, _clock);
       }

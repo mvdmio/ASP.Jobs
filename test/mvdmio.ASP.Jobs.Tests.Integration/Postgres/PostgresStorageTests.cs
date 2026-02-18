@@ -1,4 +1,5 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
@@ -7,6 +8,7 @@ using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using mvdmio.Database.PgSQL;
+using NSubstitute;
 using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Integration.Postgres;
@@ -37,7 +39,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
 
       _fixture = fixture;
       _jobInstanceRepository = new PostgresJobInstanceRepository(fixture.DatabaseConnectionFactory, Options.Create(configuration), _clock);
-      _storage = new PostgresJobStorage(fixture.DatabaseConnectionFactory, Options.Create(configuration), _clock);
+      _storage = new PostgresJobStorage(fixture.DatabaseConnectionFactory, Options.Create(configuration), Substitute.For<ILogger<PostgresJobStorage>>(), _clock);
       _cts.CancelAfter(TimeSpan.FromSeconds(1));
    }
    
