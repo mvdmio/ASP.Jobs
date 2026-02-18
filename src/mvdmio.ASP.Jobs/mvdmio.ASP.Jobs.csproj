@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup Label="Project configuration">
-        <TargetFrameworks>net8;net9</TargetFrameworks>
+        <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
         <LangVersion>latest</LangVersion>
         <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
@@ -18,7 +18,7 @@
     </PropertyGroup>
 
     <PropertyGroup Label="Package configuration">
-        <Version>4.0.4</Version>
+        <Version>4.0.5</Version>
         <Title>mvdmio.ASP.Jobs</Title>
         <Description>Job scheduling library for use in ASP.NET projects.</Description>
         <Company>mvdmio</Company>
@@ -55,6 +55,10 @@
 
         <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
             <_Parameter1>mvdmio.ASP.Jobs.Tests.Integration</_Parameter1>
+        </AssemblyAttribute>
+
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+            <_Parameter1>DynamicProxyGenAssembly2</_Parameter1>
         </AssemblyAttribute>
     </ItemGroup>
 

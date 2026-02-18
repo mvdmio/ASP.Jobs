@@ -1,11 +1,13 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
+using NSubstitute;
 using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Integration.Postgres;
@@ -37,7 +39,7 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
       };
 
       _jobInstanceRepository = new PostgresJobInstanceRepository(fixture.DatabaseConnectionFactory, Options.Create(configuration), _clock);
-      _storage = new PostgresJobStorage(fixture.DatabaseConnectionFactory, Options.Create(configuration), _clock);
+      _storage = new PostgresJobStorage(fixture.DatabaseConnectionFactory, Options.Create(configuration), Substitute.For<ILogger<PostgresJobStorage>>(), _clock);
       
       var services = new ServiceCollection();
       services.RegisterJob<ParameterModifyingJob>();
@@ -78,9 +80,9 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
       
       // Assert - The stored parameters should contain the modification made in OnJobScheduledAsync
       storedJob.Should().NotBeNull();
-      var storedParameters = storedJob!.Parameters as ParameterModifyingJob.Parameters;
+      var storedParameters = storedJob.Parameters as ParameterModifyingJob.Parameters;
       storedParameters.Should().NotBeNull();
-      storedParameters!.OriginalValue.Should().Be("original");
+      storedParameters.OriginalValue.Should().Be("original");
       storedParameters.ModifiedInOnJobScheduled.Should().Be("modified_during_scheduling");
    }
    
@@ -105,9 +107,9 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
       
       // Assert - The stored parameters should contain the modification made in OnJobScheduledAsync
       storedJob.Should().NotBeNull();
-      var storedParameters = storedJob!.Parameters as ParameterModifyingJob.Parameters;
+      var storedParameters = storedJob.Parameters as ParameterModifyingJob.Parameters;
       storedParameters.Should().NotBeNull();
-      storedParameters!.OriginalValue.Should().Be("original");
+      storedParameters.OriginalValue.Should().Be("original");
       storedParameters.ModifiedInOnJobScheduled.Should().Be("modified_during_scheduling");
    }
    
@@ -133,9 +135,9 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
       
       // Assert - The stored parameters should contain the modification made in OnJobScheduledAsync
       storedJob.Should().NotBeNull();
-      var storedParameters = storedJob!.Parameters as ParameterModifyingJob.Parameters;
+      var storedParameters = storedJob.Parameters as ParameterModifyingJob.Parameters;
       storedParameters.Should().NotBeNull();
-      storedParameters!.OriginalValue.Should().Be("original");
+      storedParameters.OriginalValue.Should().Be("original");
       storedParameters.ModifiedInOnJobScheduled.Should().Be("modified_during_scheduling");
    }
    
@@ -155,9 +157,9 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
        
        // Assert - The stored parameters should contain the modification made to the internal property in OnJobScheduledAsync
        storedJob.Should().NotBeNull();
-       var storedParameters = storedJob!.Parameters as InternalPropertyModifyingJob.Parameters;
+       var storedParameters = storedJob.Parameters as InternalPropertyModifyingJob.Parameters;
        storedParameters.Should().NotBeNull();
-       storedParameters!.PublicValue.Should().Be("public_original");
+       storedParameters.PublicValue.Should().Be("public_original");
        storedParameters.InternalModifiedValue.Should().Be("modified_during_scheduling");
     }
     
@@ -175,9 +177,9 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
        
        // Assert - The stored parameters should contain the modification made to the property with private setter in OnJobScheduledAsync
        storedJob.Should().NotBeNull();
-       var storedParameters = storedJob!.Parameters as PrivateSetterModifyingJob.Parameters;
+       var storedParameters = storedJob.Parameters as PrivateSetterModifyingJob.Parameters;
        storedParameters.Should().NotBeNull();
-       storedParameters!.PublicValue.Should().Be("public_original");
+       storedParameters.PublicValue.Should().Be("public_original");
        storedParameters.ModifiedValue.Should().Be("modified_during_scheduling");
     }
     
@@ -197,9 +199,9 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
        
        // Assert - The stored parameters should contain the modification made to the field in OnJobScheduledAsync
        storedJob.Should().NotBeNull();
-       var storedParameters = storedJob!.Parameters as FieldModifyingJob.Parameters;
+       var storedParameters = storedJob.Parameters as FieldModifyingJob.Parameters;
        storedParameters.Should().NotBeNull();
-       storedParameters!.PublicValue.Should().Be("public_original");
+       storedParameters.PublicValue.Should().Be("public_original");
        storedParameters._modifiedField.Should().Be("modified_during_scheduling");
     }
 }

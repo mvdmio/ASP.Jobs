@@ -56,7 +56,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       await _repository.RegisterInstance(CancellationToken);
       
       // Assert
-      var instances = (await _repository.GetInstances()).ToList();
+      var instances = (await _repository.GetInstances(CancellationToken)).ToList();
       instances.Should().HaveCount(1);
       instances[0].InstanceId.Should().Be("test-instance");
       instances[0].LastSeenAt.Should().Be(_clock.UtcNow);
@@ -73,7 +73,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       await _repository.RegisterInstance(CancellationToken);
       
       // Assert
-      var instances = (await _repository.GetInstances()).ToList();
+      var instances = (await _repository.GetInstances(CancellationToken)).ToList();
       instances.Should().HaveCount(1);
       instances[0].InstanceId.Should().Be("test-instance");
       instances[0].LastSeenAt.Should().Be(_clock.UtcNow);
@@ -89,7 +89,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       await _repository.UnregisterInstance(CancellationToken);
       
       // Assert
-      var instances = (await _repository.GetInstances()).ToList();
+      var instances = (await _repository.GetInstances(CancellationToken)).ToList();
       instances.Should().BeEmpty();
    }
    
@@ -102,7 +102,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       await _repository.UnregisterInstance(CancellationToken);
       
       // Assert
-      var instances = (await _repository.GetInstances()).ToList();
+      var instances = (await _repository.GetInstances(CancellationToken)).ToList();
       instances.Should().BeEmpty();
    }
    
@@ -117,7 +117,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       await _repository.UpdateLastSeenAt(CancellationToken);
       
       // Assert
-      var instances = (await _repository.GetInstances()).ToList();
+      var instances = (await _repository.GetInstances(CancellationToken)).ToList();
       instances.Should().HaveCount(1);
       instances[0].InstanceId.Should().Be("test-instance");
       instances[0].LastSeenAt.Should().Be(_clock.UtcNow);
@@ -132,7 +132,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       await _repository.UpdateLastSeenAt(CancellationToken);
       
       // Assert
-      var instances = (await _repository.GetInstances()).ToList();
+      var instances = (await _repository.GetInstances(CancellationToken)).ToList();
       instances.Should().HaveCount(1);
       instances[0].InstanceId.Should().Be("test-instance");
       instances[0].LastSeenAt.Should().Be(_clock.UtcNow);
@@ -154,7 +154,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       await _repository.CleanupOldInstances(CancellationToken);
       
       // Assert
-      var instances = (await _repository.GetInstances()).ToList();
+      var instances = (await _repository.GetInstances(CancellationToken)).ToList();
       instances.Should().HaveCount(1);
       instances[0].InstanceId.Should().Be("test-instance-2");
       instances[0].LastSeenAt.Should().Be(_clock.UtcNow);
@@ -172,7 +172,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       await _repository.CleanupOldInstances(CancellationToken);
       
       // Assert
-      var instances = (await _repository.GetInstances()).ToList();
+      var instances = (await _repository.GetInstances(CancellationToken)).ToList();
       instances.Should().HaveCount(1);
       instances[0].InstanceId.Should().Be("test-instance-1");
       instances[0].LastSeenAt.Should().Be(_clock.UtcNow);
@@ -309,7 +309,7 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
 
    private async Task<List<JobData>> GetJobsFromDatabase()
    {
-      return (await _db.Dapper.QueryAsync<JobData>("SELECT * FROM mvdmio.jobs;")).ToList();
+      return (await _db.Dapper.QueryAsync<JobData>("SELECT * FROM mvdmio.jobs;", ct: CancellationToken)).ToList();
    }
 
    private Task InsertStartedJob(DateTime? startedAt, string? startedBy, string jobName = "TestJobName")
@@ -336,7 +336,8 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
             { "perform_at", _clock.UtcNow },
             { "started_at", startedAt },
             { "started_by", startedBy }
-         }
+         },
+         ct: CancellationToken
       );
    }
 }

@@ -92,11 +92,14 @@ internal sealed class JobData
    /// <summary>
    ///    Converts this <see cref="JobData"/> to a <see cref="JobStoreItem"/>.
    /// </summary>
-   /// <returns>A new <see cref="JobStoreItem"/> instance.</returns>
-   public JobStoreItem ToJobStoreItem()
+   /// <returns>A new <see cref="JobStoreItem"/> instance, or null if the job type or parameters type cannot be resolved.</returns>
+   public JobStoreItem? ToJobStoreItem()
    {
-      var jobType = ResolveType(JobType);
-      var parametersType = ResolveType(ParametersType);
+      var jobType = Type.GetType(JobType);
+      var parametersType = Type.GetType(ParametersType);
+
+      if (jobType is null || parametersType is null)
+         return null;
 
       return new JobStoreItem {
          JobId = Id,
@@ -109,21 +112,6 @@ internal sealed class JobData
             Group = JobGroup
          }
       };
-   }
-
-   /// <summary>
-   ///    Resolves a type from its assembly-qualified name.
-   /// </summary>
-   /// <param name="assemblyQualifiedTypeName">The assembly-qualified type name.</param>
-   /// <returns>The resolved type.</returns>
-   /// <exception cref="InvalidOperationException">Thrown when the type cannot be resolved.</exception>
-   private static Type ResolveType(string assemblyQualifiedTypeName)
-   {
-      var type = Type.GetType(assemblyQualifiedTypeName);
-      if (type is null)
-         throw new InvalidOperationException($"Type '{assemblyQualifiedTypeName}' could not be resolved.");
-
-      return type;
    }
 
    /// <summary>

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
@@ -24,6 +25,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 {
    private readonly DatabaseConnectionFactory _dbConnectionFactory;
    private readonly IOptions<PostgresJobStorageConfiguration> _configuration;
+   private readonly ILogger<PostgresJobStorage> _logger;
    private readonly IClock _clock;
 
    private readonly SemaphoreSlim _initializationLock = new(1, 1);
@@ -35,10 +37,12 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    public PostgresJobStorage(
       [FromKeyedServices("Jobs")] DatabaseConnectionFactory dbConnectionFactory,
       IOptions<PostgresJobStorageConfiguration> configuration,
+      ILogger<PostgresJobStorage> logger,
       IClock clock
    ) {
       _configuration = configuration;
       _dbConnectionFactory = dbConnectionFactory;
+      _logger = logger;
       _clock = clock;
    }
 
@@ -76,11 +80,12 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                { "job_group", job.JobGroup },
                { "perform_at", job.PerformAt },
                { "instance_id", Configuration.InstanceId }
-            }
+            }, 
+            ct: ct
          );
       }
       
-      await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated");
+      await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
    }
 
    public async Task<JobStoreItem?> WaitForNextJobAsync(CancellationToken ct = default)
@@ -114,11 +119,30 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                   { "now", now },
                   { "instance_id", Configuration.InstanceId },
                   { "application_name", Configuration.ApplicationName }
-               }
+               },
+               ct: ct
             );
 
             if (selectedJob is not null)
-               return selectedJob.ToJobStoreItem();
+            {
+               var jobStoreItem = selectedJob.ToJobStoreItem();
+               if (jobStoreItem is null)
+               {
+                  // Job type could not be resolved - delete the job and log a warning
+                  await DeleteJobByIdAsync(selectedJob.Id, ct);
+                  
+                  _logger.LogWarning(
+                     "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded because the type no longer exists. The job has been deleted.",
+                     selectedJob.JobName,
+                     selectedJob.Id,
+                     selectedJob.JobType
+                  );
+
+                  continue;
+               }
+               
+               return jobStoreItem;
+            }
 
             await SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(now, ct);
          }
@@ -157,10 +181,11 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          FROM mvdmio.jobs
          WHERE started_at IS NULL
          ORDER BY perform_at, created_at
-         """
+         """,
+         ct: ct
       );
       
-      return jobData.Select(x => x.ToJobStoreItem());
+      return FilterResolvableJobs(jobData);
    }
 
    public async Task<IEnumerable<JobStoreItem>> GetInProgressJobsAsync(CancellationToken ct = default)
@@ -173,10 +198,48 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          FROM mvdmio.jobs
          WHERE started_at IS NOT NULL
          ORDER BY perform_at, created_at
-         """
+         """,
+         ct: ct
       );
       
-      return jobData.Select(x => x.ToJobStoreItem());
+      return FilterResolvableJobs(jobData);
+   }
+
+   public async Task DeleteJobByIdAsync(Guid jobId, CancellationToken ct = default)
+   {
+      await EnsureInitializedAsync(ct);
+      
+      await Db.Dapper.ExecuteAsync(
+         """
+         DELETE FROM mvdmio.jobs
+         WHERE id = :id
+         """,
+         new Dictionary<string, object?> {
+            { "id", jobId }
+         },
+         ct: ct
+      );
+   }
+
+   private IEnumerable<JobStoreItem> FilterResolvableJobs(IEnumerable<JobData> jobData)
+   {
+      foreach (var job in jobData)
+      {
+         var jobStoreItem = job.ToJobStoreItem();
+         if (jobStoreItem is not null)
+         {
+            yield return jobStoreItem;
+         }
+         else
+         {
+            _logger.LogWarning(
+               "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded because the type no longer exists.",
+               job.JobName,
+               job.Id,
+               job.JobType
+            );
+         }
+      }
    }
 
    private async Task SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(DateTime now, CancellationToken ct)
@@ -186,7 +249,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          SELECT MIN(perform_at)
          FROM mvdmio.jobs
          WHERE started_at IS NULL
-         """
+         """,
+         ct: ct
       );
          
       TimeSpan? timeUntilNextPerformAt = minPerformAt.HasValue ? minPerformAt.Value - now : null;
