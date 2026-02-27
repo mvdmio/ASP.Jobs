@@ -30,7 +30,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    private bool _isInitialized;
    
    private PostgresJobStorageConfiguration Configuration => _configuration.Value;
-   private DatabaseConnection Db => _dbConnectionFactory.ForConnectionString(Configuration.DatabaseConnectionString);
+   private DatabaseConnection Db => _dbConnectionFactory.BuildConnection(Configuration.DatabaseConnectionString);
    
    public PostgresJobStorage(
       [FromKeyedServices("Jobs")] DatabaseConnectionFactory dbConnectionFactory,

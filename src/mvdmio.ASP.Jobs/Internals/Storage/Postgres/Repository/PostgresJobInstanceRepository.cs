@@ -25,7 +25,7 @@ internal sealed class PostgresJobInstanceRepository
    
    // Using this pattern so that InstanceId can be updated from the tests.
    private string InstanceId => Configuration.InstanceId;
-   private DatabaseConnection Db => _dbConnectionFactory.ForConnectionString(Configuration.DatabaseConnectionString);
+   private DatabaseConnection Db => _dbConnectionFactory.BuildConnection(Configuration.DatabaseConnectionString);
    
    /// <summary>
    ///    Initializes a new instance of the <see cref="PostgresJobInstanceRepository"/> class.
