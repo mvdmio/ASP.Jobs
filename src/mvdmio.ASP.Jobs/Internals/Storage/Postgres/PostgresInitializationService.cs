@@ -28,7 +28,7 @@ internal sealed class PostgresInitializationService : IHostedService
       IOptions<PostgresJobStorageConfiguration> configuration,
       PostgresJobInstanceRepository repository
    ) {
-      _db = dbConnectionFactory.ForConnectionString(configuration.Value.DatabaseConnectionString);
+      _db = dbConnectionFactory.BuildConnection(configuration.Value.DatabaseConnectionString);
       _repository = repository;
    }
    

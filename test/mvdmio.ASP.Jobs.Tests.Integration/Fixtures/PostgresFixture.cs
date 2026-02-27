@@ -16,7 +16,7 @@ public sealed class PostgresFixture : IAsyncLifetime
    
    public string ConnectionString => _dbContainer.GetConnectionString();
    public DatabaseConnectionFactory DatabaseConnectionFactory { get; }
-   public DatabaseConnection DatabaseConnection => DatabaseConnectionFactory.ForConnectionString(ConnectionString);
+   public DatabaseConnection DatabaseConnection => DatabaseConnectionFactory.BuildConnection(ConnectionString);
    
    public PostgresFixture()
    {
