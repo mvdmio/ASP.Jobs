@@ -267,6 +267,74 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
    }
    
    [Fact]
+   public async Task CleanupOldInstances_ShouldKeepExactlyOneSurvivor_WhenMultipleStaleJobsCollideOnSameKey()
+   {
+      // Arrange - two stale in-progress rows for the same (application_name, job_name) and
+      // no unstarted peer. Both started_by values are in the expired set.
+      // Without the fix this triggers a 23505 duplicate key violation on
+      // idxu_jobs__application__job_name__not_started when the recovery NULLs started_at.
+      var earlierPerformAt = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(10));
+      var laterPerformAt = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(8));
+      
+      _configuration.InstanceId = "expired-instance-a";
+      _clock.UtcNow = earlierPerformAt;
+      await _repository.RegisterInstance(CancellationToken);
+      await InsertStartedJob(_clock.UtcNow, "expired-instance-a", "colliding-job");
+      
+      _configuration.InstanceId = "expired-instance-b";
+      _clock.UtcNow = laterPerformAt;
+      await _repository.RegisterInstance(CancellationToken);
+      await InsertStartedJob(_clock.UtcNow, "expired-instance-b", "colliding-job");
+      
+      _clock.UtcNow = DateTime.UtcNow;
+      
+      // Act - should NOT throw a unique constraint violation
+      await _repository.CleanupOldInstances(CancellationToken);
+      
+      // Assert - exactly one surviving row (the earliest-due one), reset to unstarted; both expired instances removed.
+      var jobs = await GetJobsFromDatabase();
+      jobs.Should().HaveCount(1);
+      jobs[0].JobName.Should().Be("colliding-job");
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+      jobs[0].PerformAt.Should().BeCloseTo(earlierPerformAt, TimeSpan.FromMilliseconds(1));
+      
+      var instances = (await _repository.GetInstances(CancellationToken)).ToList();
+      instances.Should().BeEmpty();
+   }
+   
+   [Fact]
+   public async Task CleanupOldInstances_ShouldDeleteAllStaleRows_WhenUnstartedPeerExistsAndMultipleStaleCollide()
+   {
+      // Arrange - two stale in-progress rows for the same key AND an unstarted peer already exists.
+      // All stale rows must be dropped; the unstarted peer must remain untouched.
+      _configuration.InstanceId = "expired-instance-a";
+      _clock.UtcNow = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(10));
+      await _repository.RegisterInstance(CancellationToken);
+      await InsertStartedJob(_clock.UtcNow, "expired-instance-a", "colliding-job");
+      
+      _configuration.InstanceId = "expired-instance-b";
+      _clock.UtcNow = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(8));
+      await _repository.RegisterInstance(CancellationToken);
+      await InsertStartedJob(_clock.UtcNow, "expired-instance-b", "colliding-job");
+      
+      // Unstarted peer (e.g. CRON re-enqueue while the old runs were stuck)
+      await InsertStartedJob(null, null, "colliding-job");
+      
+      _clock.UtcNow = DateTime.UtcNow;
+      
+      // Act
+      await _repository.CleanupOldInstances(CancellationToken);
+      
+      // Assert - only the unstarted peer remains.
+      var jobs = await GetJobsFromDatabase();
+      jobs.Should().HaveCount(1);
+      jobs[0].JobName.Should().Be("colliding-job");
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+   }
+   
+   [Fact]
    public async Task ReleaseStartedJobs_ShouldResetJob_WhenNoUnstartedDuplicateExists()
    {
       // Arrange
@@ -305,6 +373,33 @@ public sealed class PostgresJobInstanceRepositoryTests : IAsyncLifetime
       jobs[0].JobName.Should().Be("duplicate-job");
       jobs[0].StartedAt.Should().BeNull();
       jobs[0].StartedBy.Should().BeNull();
+   }
+   
+   [Fact]
+   public async Task ReleaseStartedJobs_ShouldKeepExactlyOneSurvivor_WhenMultipleStaleJobsCollideOnSameKey()
+   {
+      // Arrange - two in-progress rows owned by this instance with identical (application_name, job_name)
+      // and no unstarted peer. Without the fix the second NULL update violates the partial unique index.
+      var earlierPerformAt = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(10));
+      var laterPerformAt = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(8));
+      
+      await _repository.RegisterInstance(CancellationToken);
+      
+      _clock.UtcNow = earlierPerformAt;
+      await InsertStartedJob(_clock.UtcNow, _configuration.InstanceId, "colliding-job");
+      _clock.UtcNow = laterPerformAt;
+      await InsertStartedJob(_clock.UtcNow, _configuration.InstanceId, "colliding-job");
+      
+      // Act - should NOT throw a unique constraint violation
+      await _repository.ReleaseStartedJobs(CancellationToken);
+      
+      // Assert - exactly one surviving row (the earliest-due one), reset to unstarted.
+      var jobs = await GetJobsFromDatabase();
+      jobs.Should().HaveCount(1);
+      jobs[0].JobName.Should().Be("colliding-job");
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+      jobs[0].PerformAt.Should().BeCloseTo(earlierPerformAt, TimeSpan.FromMilliseconds(1));
    }
 
    private async Task<List<JobData>> GetJobsFromDatabase()

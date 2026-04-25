@@ -121,18 +121,51 @@ internal sealed class PostgresJobInstanceRepository
             {
                await Db.Dapper.ExecuteAsync(
                   """
-                  -- Delete stale in-progress jobs where a new unstarted occurrence already exists,
-                  -- since resetting started_at to NULL would violate the partial unique index.
-                  DELETE FROM mvdmio.jobs j
-                  WHERE j.started_by = ANY(:expiredInstances)
-                    AND EXISTS (
-                       SELECT 1 FROM mvdmio.jobs j2
-                       WHERE j2.application_name = j.application_name
-                         AND j2.job_name = j.job_name
-                         AND j2.started_at IS NULL
-                    );
+                  -- Reduce stale in-progress rows so that at most one row per
+                  -- (application_name, job_name) ends up satisfying the partial unique index
+                  -- 'idxu_jobs__application__job_name__not_started' once started_at is NULLed.
+                  WITH stale AS (
+                     SELECT id, application_name, job_name, perform_at
+                     FROM mvdmio.jobs
+                     WHERE started_by = ANY(:expiredInstances)
+                  ),
+                  has_unstarted AS (
+                     SELECT DISTINCT s.application_name, s.job_name
+                     FROM stale s
+                     WHERE EXISTS (
+                        SELECT 1 FROM mvdmio.jobs j2
+                        WHERE j2.application_name = s.application_name
+                          AND j2.job_name = s.job_name
+                          AND j2.started_at IS NULL
+                     )
+                  ),
+                  ranked AS (
+                     SELECT s.id,
+                            ROW_NUMBER() OVER (
+                               PARTITION BY s.application_name, s.job_name
+                               ORDER BY s.perform_at ASC, s.id ASC
+                            ) AS rn
+                     FROM stale s
+                     WHERE NOT EXISTS (
+                        SELECT 1 FROM has_unstarted u
+                        WHERE u.application_name = s.application_name
+                          AND u.job_name = s.job_name
+                     )
+                  ),
+                  to_delete AS (
+                     -- Drop every stale row whose group already has an unstarted peer.
+                     SELECT s.id
+                     FROM stale s
+                     JOIN has_unstarted u
+                       ON u.application_name = s.application_name
+                      AND u.job_name = s.job_name
+                     UNION ALL
+                     -- For groups with no unstarted peer, keep the earliest-due survivor and drop the rest.
+                     SELECT id FROM ranked WHERE rn > 1
+                  )
+                  DELETE FROM mvdmio.jobs WHERE id IN (SELECT id FROM to_delete);
                   
-                  -- Reset remaining stale in-progress jobs (no conflict possible).
+                  -- Reset remaining stale in-progress jobs (no conflict possible after the reduction above).
                   UPDATE mvdmio.jobs
                   SET started_at = NULL, 
                       started_by = NULL
@@ -158,31 +191,67 @@ internal sealed class PostgresJobInstanceRepository
    /// <returns>A task representing the asynchronous operation.</returns>
    public async Task ReleaseStartedJobs(CancellationToken ct = default)
    {
-      await Db.Dapper.ExecuteAsync(
-         """
-         -- Delete stale in-progress jobs where a new unstarted occurrence already exists,
-         -- since resetting started_at to NULL would violate the partial unique index.
-         DELETE FROM mvdmio.jobs j
-         WHERE j.started_at IS NOT NULL
-           AND j.started_by = :instanceId
-           AND EXISTS (
-              SELECT 1 FROM mvdmio.jobs j2
-              WHERE j2.application_name = j.application_name
-                AND j2.job_name = j.job_name
-                AND j2.started_at IS NULL
-           );
-         
-         -- Reset remaining in-progress jobs (no conflict possible).
-         UPDATE mvdmio.jobs
-            SET started_at = NULL,
-                started_by = NULL
-         WHERE started_at IS NOT NULL
-           AND started_by = :instanceId
-         """,
-         new Dictionary<string, object?> {
-            { "instanceId", InstanceId }
-         },
-         ct: ct
+      await Db.InTransactionAsync(async () => {
+            await Db.Dapper.ExecuteAsync(
+               """
+               -- Reduce stale in-progress rows owned by this instance so that at most one row
+               -- per (application_name, job_name) ends up satisfying the partial unique index
+               -- 'idxu_jobs__application__job_name__not_started' once started_at is NULLed.
+               WITH stale AS (
+                  SELECT id, application_name, job_name, perform_at
+                  FROM mvdmio.jobs
+                  WHERE started_at IS NOT NULL
+                    AND started_by = :instanceId
+               ),
+               has_unstarted AS (
+                  SELECT DISTINCT s.application_name, s.job_name
+                  FROM stale s
+                  WHERE EXISTS (
+                     SELECT 1 FROM mvdmio.jobs j2
+                     WHERE j2.application_name = s.application_name
+                       AND j2.job_name = s.job_name
+                       AND j2.started_at IS NULL
+                  )
+               ),
+               ranked AS (
+                  SELECT s.id,
+                         ROW_NUMBER() OVER (
+                            PARTITION BY s.application_name, s.job_name
+                            ORDER BY s.perform_at ASC, s.id ASC
+                         ) AS rn
+                  FROM stale s
+                  WHERE NOT EXISTS (
+                     SELECT 1 FROM has_unstarted u
+                     WHERE u.application_name = s.application_name
+                       AND u.job_name = s.job_name
+                  )
+               ),
+               to_delete AS (
+                  -- Drop every stale row whose group already has an unstarted peer.
+                  SELECT s.id
+                  FROM stale s
+                  JOIN has_unstarted u
+                    ON u.application_name = s.application_name
+                   AND u.job_name = s.job_name
+                  UNION ALL
+                  -- For groups with no unstarted peer, keep the earliest-due survivor and drop the rest.
+                  SELECT id FROM ranked WHERE rn > 1
+               )
+               DELETE FROM mvdmio.jobs WHERE id IN (SELECT id FROM to_delete);
+               
+               -- Reset remaining in-progress jobs (no conflict possible after the reduction above).
+               UPDATE mvdmio.jobs
+                  SET started_at = NULL,
+                      started_by = NULL
+               WHERE started_at IS NOT NULL
+                 AND started_by = :instanceId
+               """,
+               new Dictionary<string, object?> {
+                  { "instanceId", InstanceId }
+               },
+               ct: ct
+            );
+         }
       );
    }
 
