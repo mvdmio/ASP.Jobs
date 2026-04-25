@@ -13,31 +13,21 @@ public class InMemoryJobStorageTests
    private readonly CancellationTokenSource _cts;
 
    private CancellationToken CancellationToken => _cts.Token;
-   
+
    public InMemoryJobStorageTests()
    {
       _cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
       _clock = new TestClock();
       _sut = new InMemoryJobStorage(_clock);
-      
+
       _cts.CancelAfter(TimeSpan.FromSeconds(1));
    }
 
    [Fact]
    public async Task AddJob_ShouldAddJob_WhenEmpty()
    {
-      // Arrange
-
       // Act
-      await _sut.ScheduleJobAsync(
-         new JobStoreItem {
-            JobType = typeof(TestJob),
-            Parameters = null!,
-            PerformAt = _clock.UtcNow,
-            Options = new JobScheduleOptions()
-         },
-         CancellationToken
-      );
+      await _sut.ScheduleJobAsync(JobStoreItemFactory.MakeTestJob(performAt: _clock.UtcNow), CancellationToken);
 
       // Assert
       _sut.ScheduledJobs.Should().HaveCount(1);
@@ -61,8 +51,6 @@ public class InMemoryJobStorageTests
    [Fact]
    public async Task AddJobs()
    {
-      // Arrange
-
       // Act
       var jobs = await AddNewJobStoreItems(100);
 
@@ -82,15 +70,13 @@ public class InMemoryJobStorageTests
       await _sut.FinalizeJobAsync(jobStoreItem, CancellationToken);
 
       // Assert
-      _sut.ScheduledJobs.Should().HaveCount(0);
-      _sut.InProgressJobs.Should().HaveCount(0);
+      _sut.ScheduledJobs.Should().BeEmpty();
+      _sut.InProgressJobs.Should().BeEmpty();
    }
 
    [Fact]
    public async Task WaitForNextJob_ShouldReturnNull_WhenEmpty()
    {
-      // Arrange
-      
       // Act
       var result = await _sut.WaitForNextJobAsync(CancellationToken);
 
@@ -194,13 +180,11 @@ public class InMemoryJobStorageTests
    [Fact]
    public async Task ReschedulingJobThatIsCurrentlyInProgress()
    {
-      // Arrange
-
       // Act
-      var scheduledJob1 = await AddNewJobStoreItem(id: "TestId");
-      _ = await _sut.WaitForNextJobAsync(CancellationToken);
+      _ = await AddNewJobStoreItem(id: "TestId");
+      var scheduledJob1 = await _sut.WaitForNextJobAsync(CancellationToken);
       var scheduledJob2 = await AddNewJobStoreItem(id: "TestId");
-      await _sut.FinalizeJobAsync(scheduledJob1, CancellationToken);
+      await _sut.FinalizeJobAsync(scheduledJob1!, CancellationToken);
       var job2 = await _sut.WaitForNextJobAsync(CancellationToken);
 
       // Assert
@@ -209,34 +193,24 @@ public class InMemoryJobStorageTests
 
    private async Task<JobStoreItem> AddNewJobStoreItem(DateTime? performAt = null, string? id = null, string? group = null)
    {
-      var jobItem = new JobStoreItem {
-         JobType = typeof(TestJob),
-         Parameters = null!,
-         PerformAt = performAt ?? _clock.UtcNow,
-         Options = new JobScheduleOptions {
-            JobName = id ?? Guid.NewGuid().ToString(),
-            Group = group
-         }
-      };
+      var jobItem = JobStoreItemFactory.MakeTestJob(
+         jobName: id ?? Guid.NewGuid().ToString(),
+         group: group,
+         performAt: performAt ?? _clock.UtcNow,
+         useNullParameters: true);
 
       await _sut.ScheduleJobAsync(jobItem, CancellationToken);
-
       return jobItem;
    }
 
    private async Task<JobStoreItem[]> AddNewJobStoreItems(int count, DateTime? performAt = null, string? group = null)
    {
       var items = Enumerable.Range(0, count)
-         .Select(_ => new JobStoreItem {
-               JobType = typeof(TestJob),
-               Parameters = null!,
-               PerformAt = performAt ?? _clock.UtcNow,
-               Options = new JobScheduleOptions {
-                  JobName = Guid.NewGuid().ToString(),
-                  Group = group
-               }
-            }
-         )
+         .Select(_ => JobStoreItemFactory.MakeTestJob(
+            jobName: Guid.NewGuid().ToString(),
+            group: group,
+            performAt: performAt ?? _clock.UtcNow,
+            useNullParameters: true))
          .ToArray();
 
       await _sut.ScheduleJobsAsync(items, CancellationToken);

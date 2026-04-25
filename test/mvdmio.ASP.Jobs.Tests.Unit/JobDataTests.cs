@@ -6,37 +6,18 @@ namespace mvdmio.ASP.Jobs.Tests.Unit;
 
 public class JobDataTests
 {
-   [Fact]
-   public void ToJobStoreItem_ShouldReturnNull_WhenJobTypeCannotBeResolved()
+   private const string UnresolvableType = "NonExistent.Type, NonExistent.Assembly";
+
+   [Theory]
+   [InlineData(UnresolvableType, "object")]
+   [InlineData("object", UnresolvableType)]
+   public void ToJobStoreItem_ShouldReturnNull_WhenTypeCannotBeResolved(string jobType, string parametersType)
    {
       // Arrange
       var jobData = new JobData {
          Id = Guid.NewGuid(),
-         JobType = "NonExistent.JobType, NonExistent.Assembly",
-         ParametersType = typeof(object).AssemblyQualifiedName!,
-         ParametersJson = "{}",
-         CronExpression = null,
-         ApplicationName = "test-app",
-         JobName = "test-job",
-         JobGroup = null,
-         PerformAt = DateTime.UtcNow
-      };
-
-      // Act
-      var result = jobData.ToJobStoreItem();
-
-      // Assert
-      result.Should().BeNull();
-   }
-
-   [Fact]
-   public void ToJobStoreItem_ShouldReturnNull_WhenParametersTypeCannotBeResolved()
-   {
-      // Arrange
-      var jobData = new JobData {
-         Id = Guid.NewGuid(),
-         JobType = typeof(object).AssemblyQualifiedName!,
-         ParametersType = "NonExistent.ParametersType, NonExistent.Assembly",
+         JobType = Resolve(jobType, typeof(object)),
+         ParametersType = Resolve(parametersType, typeof(object)),
          ParametersJson = "{}",
          CronExpression = null,
          ApplicationName = "test-app",
@@ -82,4 +63,7 @@ public class JobDataTests
       result.Options.JobName.Should().Be("test-job");
       result.Options.Group.Should().Be("test-group");
    }
+
+   private static string Resolve(string token, Type fallback) =>
+      token == UnresolvableType ? UnresolvableType : fallback.AssemblyQualifiedName!;
 }
