@@ -30,15 +30,16 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    private readonly SemaphoreSlim _initializationLock = new(1, 1);
    private bool _isInitialized;
-   private DatabaseConnection? _db;
-   
-   private PostgresJobStorageConfiguration Configuration => _configuration.Value;
 
    // The DatabaseConnectionFactory caches the underlying NpgsqlDataSource per connection string,
    // but each call to BuildConnection allocates a fresh DatabaseConnection wrapper (with its own
    // SemaphoreSlim). Cache the wrapper for the lifetime of the storage instance to avoid
    // unnecessary allocations and to keep the connection-handling state in a single place.
-   private DatabaseConnection Db => _db ??= _dbConnectionFactory.BuildConnection(Configuration.DatabaseConnectionString);
+   private readonly DatabaseConnection _db;
+
+   private PostgresJobStorageConfiguration Configuration => _configuration.Value;
+
+   private DatabaseConnection Db => _db;
    
    public PostgresJobStorage(
       [FromKeyedServices("Jobs")] DatabaseConnectionFactory dbConnectionFactory,
@@ -50,6 +51,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       _dbConnectionFactory = dbConnectionFactory;
       _logger = logger;
       _clock = clock;
+      _db = _dbConnectionFactory.BuildConnection(Configuration.DatabaseConnectionString);
    }
 
    public Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default)
@@ -264,15 +266,15 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       if (timeUntilNextPerformAt.HasValue && timeUntilNextPerformAt.Value <= TimeSpan.Zero)
          return;
 
-      // Use a linked cancellation token so that whichever branch loses the race in Task.WhenAny
-      // is cancelled and releases its resources. Without this, Db.WaitAsync keeps a dedicated
-      // LISTEN connection open until the outer cancellation token fires, leaking one connection
-      // per polling iteration whenever the delay branch wins (eventually exhausting Postgres'
-      // max_connections with error 53300).
-      using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-
       if (timeUntilNextPerformAt.HasValue)
       {
+         // Use a linked cancellation token so that whichever branch loses the race in Task.WhenAny
+         // is cancelled and releases its resources. Without this, Db.WaitAsync keeps a dedicated
+         // LISTEN connection open until the outer cancellation token fires, leaking one connection
+         // per polling iteration whenever the delay branch wins (eventually exhausting Postgres'
+         // max_connections with error 53300).
+         using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
          var delayTask = Task.Delay(timeUntilNextPerformAt.Value, waitCts.Token);
          var listenTask = Db.WaitAsync("jobs_updated", waitCts.Token);
 
@@ -288,7 +290,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       {
          try
          {
-            await Db.WaitAsync("jobs_updated", waitCts.Token);
+            await Db.WaitAsync("jobs_updated", ct);
          }
          catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
          {
@@ -321,18 +323,26 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       }
    }
 
+   private bool _disposed;
+
    public void Dispose()
    {
-      _db?.Dispose();
+      if (_disposed)
+         return;
+
+      _disposed = true;
+      _db.Dispose();
       _dbConnectionFactory.Dispose();
       _initializationLock.Dispose();
    }
 
    public async ValueTask DisposeAsync()
    {
-      if (_db is not null)
-         await _db.DisposeAsync();
-      
+      if (_disposed)
+         return;
+
+      _disposed = true;
+      await _db.DisposeAsync();
       await _dbConnectionFactory.DisposeAsync();
       _initializationLock.Dispose();
    }

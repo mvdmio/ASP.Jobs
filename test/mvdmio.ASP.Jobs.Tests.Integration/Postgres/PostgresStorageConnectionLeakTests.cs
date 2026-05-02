@@ -47,15 +47,9 @@ public sealed class PostgresStorageConnectionLeakTests : IAsyncLifetime
       var baselineConnections = await CountConnectionsAsync();
 
       // Act - run the poll loop for ~3 seconds. With the leak, each iteration would add a connection.
+      // WaitForNextJobAsync swallows OCE internally and returns null on cancellation, so no try/catch is needed.
       using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-      try
-      {
-         await _harness.Storage.WaitForNextJobAsync(cts.Token);
-      }
-      catch (OperationCanceledException)
-      {
-         // expected
-      }
+      await _harness.Storage.WaitForNextJobAsync(cts.Token);
 
       // Allow a brief moment for any in-flight close to settle.
       await Task.Delay(TimeSpan.FromMilliseconds(250));
@@ -82,16 +76,9 @@ public sealed class PostgresStorageConnectionLeakTests : IAsyncLifetime
       );
       await _harness.Storage.ScheduleJobAsync(futureJob);
 
-      // Act
+      // Act - WaitForNextJobAsync swallows OCE internally and returns null on cancellation.
       using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-      try
-      {
-         await _harness.Storage.WaitForNextJobAsync(cts.Token);
-      }
-      catch (OperationCanceledException)
-      {
-         // expected
-      }
+      await _harness.Storage.WaitForNextJobAsync(cts.Token);
 
       // Give Npgsql a moment to release pooled connectors after cancellation.
       await Task.Delay(TimeSpan.FromMilliseconds(500));
