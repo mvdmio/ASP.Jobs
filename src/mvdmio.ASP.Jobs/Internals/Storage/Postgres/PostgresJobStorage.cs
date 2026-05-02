@@ -30,9 +30,15 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    private readonly SemaphoreSlim _initializationLock = new(1, 1);
    private bool _isInitialized;
+   private DatabaseConnection? _db;
    
    private PostgresJobStorageConfiguration Configuration => _configuration.Value;
-   private DatabaseConnection Db => _dbConnectionFactory.BuildConnection(Configuration.DatabaseConnectionString);
+
+   // The DatabaseConnectionFactory caches the underlying NpgsqlDataSource per connection string,
+   // but each call to BuildConnection allocates a fresh DatabaseConnection wrapper (with its own
+   // SemaphoreSlim). Cache the wrapper for the lifetime of the storage instance to avoid
+   // unnecessary allocations and to keep the connection-handling state in a single place.
+   private DatabaseConnection Db => _db ??= _dbConnectionFactory.BuildConnection(Configuration.DatabaseConnectionString);
    
    public PostgresJobStorage(
       [FromKeyedServices("Jobs")] DatabaseConnectionFactory dbConnectionFactory,
@@ -257,28 +263,76 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
       if (timeUntilNextPerformAt.HasValue && timeUntilNextPerformAt.Value <= TimeSpan.Zero)
          return;
-         
+
+      // Use a linked cancellation token so that whichever branch loses the race in Task.WhenAny
+      // is cancelled and releases its resources. Without this, Db.WaitAsync keeps a dedicated
+      // LISTEN connection open until the outer cancellation token fires, leaking one connection
+      // per polling iteration whenever the delay branch wins (eventually exhausting Postgres'
+      // max_connections with error 53300).
+      using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
       if (timeUntilNextPerformAt.HasValue)
       {
-         await Task.WhenAny(
-            Task.Delay(timeUntilNextPerformAt.Value, ct),
-            Db.WaitAsync("jobs_updated", ct)
-         );   
+         var delayTask = Task.Delay(timeUntilNextPerformAt.Value, waitCts.Token);
+         var listenTask = Db.WaitAsync("jobs_updated", waitCts.Token);
+
+         await Task.WhenAny(delayTask, listenTask);
+
+         // Cancel both branches so the loser releases its resources (in particular the
+         // dedicated LISTEN connection used by Db.WaitAsync) before we return. We then
+         // await both tasks to ensure their cleanup (NpgsqlConnection.CloseAsync /
+         // DisposeAsync inside WaitAsync) has actually run.
+         await CancelAndDrainAsync(waitCts, delayTask, listenTask);
       }
       else
       {
-         await Db.WaitAsync("jobs_updated", ct);
+         try
+         {
+            await Db.WaitAsync("jobs_updated", waitCts.Token);
+         }
+         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+         {
+            // Expected when the outer token fires.
+         }
+      }
+   }
+
+   private static async Task CancelAndDrainAsync(CancellationTokenSource cts, params Task[] tasks)
+   {
+      try
+      {
+         await cts.CancelAsync();
+      }
+      catch (ObjectDisposedException)
+      {
+         // The token source was already disposed - nothing to do.
+      }
+
+      foreach (var task in tasks)
+      {
+         try
+         {
+            await task;
+         }
+         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+         {
+            // Expected for the loser of the race.
+         }
       }
    }
 
    public void Dispose()
    {
+      _db?.Dispose();
       _dbConnectionFactory.Dispose();
       _initializationLock.Dispose();
    }
 
    public async ValueTask DisposeAsync()
    {
+      if (_db is not null)
+         await _db.DisposeAsync();
+      
       await _dbConnectionFactory.DisposeAsync();
       _initializationLock.Dispose();
    }
