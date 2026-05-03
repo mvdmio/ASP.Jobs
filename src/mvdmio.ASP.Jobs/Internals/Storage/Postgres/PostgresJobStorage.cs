@@ -31,16 +31,15 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    private readonly SemaphoreSlim _initializationLock = new(1, 1);
    private bool _isInitialized;
 
-   // The DatabaseConnectionFactory caches the underlying NpgsqlDataSource per connection string,
-   // but each call to BuildConnection allocates a fresh DatabaseConnection wrapper (with its own
-   // SemaphoreSlim). Cache the wrapper for the lifetime of the storage instance to avoid
-   // unnecessary allocations and to keep the connection-handling state in a single place.
-   private readonly DatabaseConnection _db;
-
    private PostgresJobStorageConfiguration Configuration => _configuration.Value;
 
-   private DatabaseConnection Db => _db;
-   
+   // IMPORTANT: each access returns a NEW DatabaseConnection wrapper. The wrapper holds a single
+   // shared NpgsqlConnection field, so reusing the same wrapper across concurrent operations
+   // would cause "A command is already in progress" errors when two callers race on the same
+   // physical connection. The underlying NpgsqlDataSource is cached by the factory, so the
+   // wrappers are cheap and each one acquires/returns its own pooled connector per call.
+   private DatabaseConnection Db => _dbConnectionFactory.BuildConnection(Configuration.DatabaseConnectionString);
+
    public PostgresJobStorage(
       [FromKeyedServices("Jobs")] DatabaseConnectionFactory dbConnectionFactory,
       IOptions<PostgresJobStorageConfiguration> configuration,
@@ -51,7 +50,6 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       _dbConnectionFactory = dbConnectionFactory;
       _logger = logger;
       _clock = clock;
-      _db = _dbConnectionFactory.BuildConnection(Configuration.DatabaseConnectionString);
    }
 
    public Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default)
@@ -331,7 +329,6 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          return;
 
       _disposed = true;
-      _db.Dispose();
       _dbConnectionFactory.Dispose();
       _initializationLock.Dispose();
    }
@@ -342,7 +339,6 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          return;
 
       _disposed = true;
-      await _db.DisposeAsync();
       await _dbConnectionFactory.DisposeAsync();
       _initializationLock.Dispose();
    }
@@ -354,16 +350,16 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
       await _initializationLock.WaitAsync(ct);
 
-      if(_isInitialized)
-         return;
-      
       try
       {
+         if(_isInitialized)
+            return;
+
          await RunDbMigrations(ct);
+         _isInitialized = true;
       }
       finally
       {
-         _isInitialized = true;
          _initializationLock.Release();
       }
    }
