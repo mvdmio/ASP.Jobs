@@ -25,3 +25,17 @@ Read the relevant file before working in that area:
 - [Testing](.agents/ref/testing.md) — unit & integration patterns, test utilities
 - [Common tasks](.agents/ref/common-tasks.md) — adding a job, a migration, or a storage backend
 - [Dependencies & CI/CD](.agents/ref/dependencies.md) — package list and publish pipeline
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as markdown files under `.agents/<feature>/`. See `.agents/ref/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `.agents/ref/triage-labels.md`.
+
+### Domain docs
+
+Single-context (`CONTEXT.md` + `docs/adr/` at the repo root). See `.agents/ref/domain.md`.
