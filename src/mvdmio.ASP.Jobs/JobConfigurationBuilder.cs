@@ -70,13 +70,19 @@ public class JobConfigurationBuilder
       services.Configure(_jobRunnerOptionsBuilder);
       
       services.AddSingleton(typeof(IJobStorage), JobStorageType);
+
+      // Initialization is backend-agnostic: a single canonical trigger (IJobInitializer) plus a hosted service
+      // that runs it in StartingAsync (before any StartAsync). Registered for all backends; a no-op for InMemory.
+      services.AddSingleton<IJobInitializer, JobInitializer>();
+      services.AddHostedService<JobInitializationHostedService>();
+
       if (JobStorageType == typeof(PostgresJobStorage))
       {
          services.Configure(_postgresConfigurationBuilder);
          services.AddSingleton<PostgresJobInstanceRepository>();
          services.AddKeyedSingleton<DatabaseConnectionFactory>("Jobs");
-         
-         services.AddHostedService<PostgresInitializationService>();
+
+         services.AddHostedService<PostgresInstanceRegistrationService>();
          services.AddHostedService<PostgresCleanupService>();
       }
       

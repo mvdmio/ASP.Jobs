@@ -40,6 +40,12 @@ internal sealed class InMemoryJobStorage : IJobStorage
       _clock = clock;
    }
 
+   public Task InitializeAsync(CancellationToken ct = default)
+   {
+      // The in-memory backend is always ready; there is nothing to initialize.
+      return Task.CompletedTask;
+   }
+
    public async Task ScheduleJobAsync(JobStoreItem item, CancellationToken ct = default)
    {
       await _jobQueueLock.WaitAsync(ct);

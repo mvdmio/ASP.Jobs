@@ -1,4 +1,6 @@
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry.Trace;
@@ -36,6 +38,23 @@ public static class DependencyInjectionExtensions
       {
          services.AddScoped<TJob>();       // So that you can inject the implementation directly into some classes.
          services.AddScoped<IJob, TJob>(); // So that you can inject a list if implementations into some classes.
+      }
+   }
+
+   /// <param name="serviceProvider">The service provider used to resolve the job initializer.</param>
+   extension(IServiceProvider serviceProvider)
+   {
+      /// <summary>
+      ///    Initializes the jobs framework (runs storage Initialization, e.g. database migrations for PostgreSQL storage).
+      ///    In ASP.NET hosts this runs automatically at host start, so consumers do not need to call it. Call it explicitly
+      ///    from non-ASP.NET hosts, or from code that schedules jobs before the host has started. Idempotent.
+      /// </summary>
+      /// <param name="ct">A token to observe for cancellation requests.</param>
+      /// <returns>A task representing the asynchronous operation.</returns>
+      public Task InitializeJobsAsync(CancellationToken ct = default)
+      {
+         var initializer = serviceProvider.GetRequiredService<IJobInitializer>();
+         return initializer.InitializeAsync(ct);
       }
    }
 

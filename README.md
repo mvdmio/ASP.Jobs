@@ -71,6 +71,22 @@ public void MyController : Controller
 }
 ```
 
+## Initialization
+
+The library prepares its storage (for PostgreSQL, by running database migrations) through a single **Initialization**
+step. In ASP.NET hosts this runs automatically at host start, before any job is scheduled or any worker registers, so
+**you normally do not need to do anything**.
+
+If you use the library outside an ASP.NET host (console app, worker, tests), or you schedule jobs *before* the host has
+started, call `InitializeJobsAsync()` on your `IServiceProvider` first:
+
+```csharp
+await serviceProvider.InitializeJobsAsync();
+```
+
+Scheduling a job before Initialization has completed throws `JobStorageNotInitializedException` with an actionable
+message — storage is never migrated lazily as a side effect of scheduling.
+
 ## Scheduled jobs (CRON)
 
 You can schedule any job to run repeatedly using CRON expressions.

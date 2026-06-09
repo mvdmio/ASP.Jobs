@@ -29,7 +29,12 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    private readonly IClock _clock;
 
    private readonly SemaphoreSlim _initializationLock = new(1, 1);
-   private bool _isInitialized;
+
+   // volatile: written inside _initializationLock during InitializeAsync, but read lock-free by the
+   // Initialization Guard (ThrowIfNotInitialized) and the double-checked fast path. volatile gives the
+   // reader threads (job runner, request handlers) an acquire fence so they observe the completed
+   // initialization rather than a stale 'false' on weak-memory hardware.
+   private volatile bool _isInitialized;
 
    private PostgresJobStorageConfiguration Configuration => _configuration.Value;
 
@@ -59,8 +64,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
    {
-      await EnsureInitializedAsync(ct);
-      
+      ThrowIfNotInitialized();
+
       var jobData = items.Select(x => JobData.FromJobStoreItem(Configuration.ApplicationName, x));
 
       foreach (var job in jobData)
@@ -96,8 +101,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task<JobStoreItem?> WaitForNextJobAsync(CancellationToken ct = default)
    {
-      await EnsureInitializedAsync(ct);
-      
+      ThrowIfNotInitialized();
+
       try
       {
          while (!ct.IsCancellationRequested)
@@ -164,8 +169,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default)
    {
-      await EnsureInitializedAsync(ct);
-      
+      ThrowIfNotInitialized();
+
       await Db.Dapper.ExecuteAsync(
          """
          DELETE FROM mvdmio.jobs
@@ -179,8 +184,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
    {
-      await EnsureInitializedAsync(ct);
-      
+      ThrowIfNotInitialized();
+
       var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
          SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by
@@ -196,8 +201,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task<IEnumerable<JobStoreItem>> GetInProgressJobsAsync(CancellationToken ct = default)
    {
-      await EnsureInitializedAsync(ct);
-      
+      ThrowIfNotInitialized();
+
       var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
          SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, started_at, started_by
@@ -213,8 +218,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    public async Task DeleteJobByIdAsync(Guid jobId, CancellationToken ct = default)
    {
-      await EnsureInitializedAsync(ct);
-      
+      ThrowIfNotInitialized();
+
       await Db.Dapper.ExecuteAsync(
          """
          DELETE FROM mvdmio.jobs
@@ -343,7 +348,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       _initializationLock.Dispose();
    }
 
-   private async Task EnsureInitializedAsync(CancellationToken ct = default)
+   public async Task InitializeAsync(CancellationToken ct = default)
    {
       if(_isInitialized)
          return;
@@ -363,7 +368,13 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          _initializationLock.Release();
       }
    }
-   
+
+   private void ThrowIfNotInitialized()
+   {
+      if(!_isInitialized)
+         throw new JobStorageNotInitializedException();
+   }
+
    private async Task RunDbMigrations(CancellationToken ct = default)
    {
       var migrationRunner = new DatabaseMigrator(Db, GetType().Assembly);

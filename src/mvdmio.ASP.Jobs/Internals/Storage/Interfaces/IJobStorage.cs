@@ -12,6 +12,16 @@ namespace mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 internal interface IJobStorage
 {
    /// <summary>
+   ///    Initializes the storage backend so it is ready for use (for PostgreSQL, runs the database migrations).
+   ///    Must complete once before any other storage access. Idempotent: a single process runs the backend's
+   ///    initialization mechanism exactly once regardless of how many times this is called. The InMemory backend
+   ///    treats this as a no-op.
+   /// </summary>
+   /// <param name="ct">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
+   Task InitializeAsync(CancellationToken ct = default);
+
+   /// <summary>
    ///    Schedules a job for execution.
    /// </summary>
    /// <param name="jobItem">The job item to schedule.</param>

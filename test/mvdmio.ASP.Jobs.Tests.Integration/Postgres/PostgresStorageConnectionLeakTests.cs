@@ -28,6 +28,7 @@ public sealed class PostgresStorageConnectionLeakTests : IAsyncLifetime
    public async ValueTask InitializeAsync()
    {
       await _fixture.ResetAsync();
+      await _harness.Storage.InitializeAsync();
       await _harness.InstanceRepository.RegisterInstance();
    }
 

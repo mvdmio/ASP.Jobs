@@ -34,6 +34,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    public async ValueTask InitializeAsync()
    {
       await _fixture.ResetAsync();
+      await _harness.Storage.InitializeAsync(CancellationToken);
       await _harness.InstanceRepository.RegisterInstance(CancellationToken);
    }
 
