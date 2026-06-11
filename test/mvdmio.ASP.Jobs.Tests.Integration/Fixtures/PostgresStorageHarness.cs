@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Repository;
@@ -30,6 +31,6 @@ internal sealed class PostgresStorageHarness
 
       var optionsWrapper = Options.Create(Configuration);
       InstanceRepository = new PostgresJobInstanceRepository(fixture.DatabaseConnectionFactory, optionsWrapper, Clock);
-      Storage = new PostgresJobStorage(fixture.DatabaseConnectionFactory, optionsWrapper, Substitute.For<ILogger<PostgresJobStorage>>(), Clock);
+      Storage = new PostgresJobStorage(fixture.DatabaseConnectionFactory, optionsWrapper, NullLoggerFactory.Instance, Clock);
    }
 }

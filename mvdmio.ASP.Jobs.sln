@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.12.35707.178
@@ -18,12 +18,6 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "mvdmio.ASP.Jobs.Tests.Integration", "test\mvdmio.ASP.Jobs.Tests.Integration\mvdmio.ASP.Jobs.Tests.Integration.csproj", "{4D1D86CD-CFC0-486A-BCF5-77C94B640EC9}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{5E6656DF-E258-4FAA-B094-60054DBDAD38}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "__OpenCode", "__OpenCode", "{A5C049D3-042E-4B55-861B-2694C739AF60}"
-	ProjectSection(SolutionItems) = preProject
-		opencode.jsonc = opencode.jsonc
-		AGENTS.md = AGENTS.md
-	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -25,6 +25,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 {
    private readonly DatabaseConnectionFactory _dbConnectionFactory;
    private readonly IOptions<PostgresJobStorageConfiguration> _configuration;
+   private readonly ILoggerFactory _loggerFactory;
    private readonly ILogger<PostgresJobStorage> _logger;
    private readonly IClock _clock;
 
@@ -48,12 +49,13 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    public PostgresJobStorage(
       [FromKeyedServices("Jobs")] DatabaseConnectionFactory dbConnectionFactory,
       IOptions<PostgresJobStorageConfiguration> configuration,
-      ILogger<PostgresJobStorage> logger,
+      ILoggerFactory loggerFactory,
       IClock clock
    ) {
       _configuration = configuration;
+      _loggerFactory = loggerFactory;
       _dbConnectionFactory = dbConnectionFactory;
-      _logger = logger;
+      _logger = loggerFactory.CreateLogger<PostgresJobStorage>();
       _clock = clock;
    }
 
@@ -377,7 +379,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
    private async Task RunDbMigrations(CancellationToken ct = default)
    {
-      var migrationRunner = new DatabaseMigrator(Db, GetType().Assembly);
+      var migrationRunner = new DatabaseMigrator(Db, _loggerFactory, GetType().Assembly);
       await migrationRunner.MigrateDatabaseToLatestAsync(ct);
    }
 }
