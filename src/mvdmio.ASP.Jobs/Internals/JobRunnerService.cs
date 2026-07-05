@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -201,34 +202,52 @@ internal sealed class JobRunnerService : BackgroundService
       activity?.SetTag("job.parameters", jobBusItem.Parameters);
       activity?.SetTag("job.cron", jobBusItem.CronExpression?.ToString());
 
+      // Save the thread's culture so we can restore it after the job runs; jobs run on shared thread-pool
+      // threads, so without a restore one job's Captured Culture would leak into the next job on that thread.
+      var originalCulture = CultureInfo.CurrentCulture;
+      var originalUICulture = CultureInfo.CurrentUICulture;
+
       try
       {
-         _logger.LogInformation("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
-         activity?.AddEvent(new ActivityEvent("Job Started"));
+         try
+         {
+            // Resolving/applying the Captured Culture happens inside the try on purpose: an unresolvable culture
+            // then rides the normal job-failure path (logged + OnJobFailedAsync) instead of being lost on this
+            // fire-and-forget task.
+            ApplyCapturedCulture(jobBusItem);
 
-         await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
-         await job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken);
+            _logger.LogInformation("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+            activity?.AddEvent(new ActivityEvent("Job Started"));
 
-         activity?.AddEvent(new ActivityEvent("Job Completed"));
-         activity?.SetStatus(ActivityStatusCode.Ok, "Job completed successfully");
+            await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
+            await job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken);
 
-         var endTime = Stopwatch.GetTimestamp();
-         var duration = new TimeSpan(endTime - startTime);
-         _logger.LogInformation("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
-      }
-      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-      {
-         // Ignore cancellation exceptions; they are expected when the service is stopped.
-         activity?.AddEvent(new ActivityEvent("Job Canceled"));
-      }
-      catch (Exception e)
-      {
-         _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+            activity?.AddEvent(new ActivityEvent("Job Completed"));
+            activity?.SetStatus(ActivityStatusCode.Ok, "Job completed successfully");
 
-         activity?.AddException(e);
-         activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
+            var endTime = Stopwatch.GetTimestamp();
+            var duration = new TimeSpan(endTime - startTime);
+            _logger.LogInformation("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
+         }
+         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+         {
+            // Ignore cancellation exceptions; they are expected when the service is stopped.
+            activity?.AddEvent(new ActivityEvent("Job Canceled"));
+         }
+         catch (Exception e)
+         {
+            _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
 
-         await job.OnJobFailedAsync(jobBusItem.Parameters, e, cancellationToken);
+            activity?.AddException(e);
+            activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
+
+            await job.OnJobFailedAsync(jobBusItem.Parameters, e, cancellationToken);
+         }
+         finally
+         {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUICulture;
+         }
       }
       finally
       {
@@ -246,6 +265,23 @@ internal sealed class JobRunnerService : BackgroundService
       }
    }
 
+   /// <summary>
+   ///    Applies the job's Captured Culture to the current thread. Does nothing when no culture was captured
+   ///    (e.g. a job persisted before culture capture existed), leaving the thread's ambient culture untouched.
+   ///    Both cultures are resolved before either is assigned, so an unresolvable name never leaves a half-applied culture.
+   /// </summary>
+   private static void ApplyCapturedCulture(JobStoreItem jobBusItem)
+   {
+      if (jobBusItem.CultureName is null || jobBusItem.UICultureName is null)
+         return;
+
+      var culture = CultureInfo.GetCultureInfo(jobBusItem.CultureName);
+      var uiCulture = CultureInfo.GetCultureInfo(jobBusItem.UICultureName);
+
+      CultureInfo.CurrentCulture = culture;
+      CultureInfo.CurrentUICulture = uiCulture;
+   }
+
    private async Task ScheduleNextOccurrence(JobStoreItem jobItem, CancellationToken ct = default)
    {
       ArgumentNullException.ThrowIfNull(jobItem.CronExpression, nameof(jobItem.CronExpression));
@@ -259,7 +295,9 @@ internal sealed class JobRunnerService : BackgroundService
          PerformAt = nextOccurrence.Value,
          Parameters = jobItem.Parameters,
          Options = jobItem.Options,
-         CronExpression = jobItem.CronExpression
+         CronExpression = jobItem.CronExpression,
+         CultureName = jobItem.CultureName,
+         UICultureName = jobItem.UICultureName
       };
 
       await _jobStorage.ScheduleJobAsync(newJobItem, ct);

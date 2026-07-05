@@ -39,6 +39,19 @@ internal sealed class JobStoreItem
    public CronExpression? CronExpression { get; init; }
 
    /// <summary>
+   ///    Gets the name of the formatting culture (<see cref="System.Globalization.CultureInfo.CurrentCulture"/>) that the job
+   ///    should run under, captured when the job was scheduled. The invariant culture is the empty string; <c>null</c> means no
+   ///    culture was captured (e.g. a job persisted before culture capture existed) and the executing thread's culture is left untouched.
+   /// </summary>
+   public string? CultureName { get; init; }
+
+   /// <summary>
+   ///    Gets the name of the UI culture (<see cref="System.Globalization.CultureInfo.CurrentUICulture"/>) that the job should run
+   ///    under, captured when the job was scheduled. Follows the same null/empty-string semantics as <see cref="CultureName"/>.
+   /// </summary>
+   public string? UICultureName { get; init; }
+
+   /// <summary>
    ///    Generates a new GUID for job identification.
    /// </summary>
    /// <returns>A new GUID.</returns>

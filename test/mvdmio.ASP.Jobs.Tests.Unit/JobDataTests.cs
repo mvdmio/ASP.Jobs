@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using Xunit;
 
@@ -23,6 +24,8 @@ public class JobDataTests
          ApplicationName = "test-app",
          JobName = "test-job",
          JobGroup = null,
+         Culture = null,
+         UICulture = null,
          PerformAt = DateTime.UtcNow
       };
 
@@ -48,6 +51,8 @@ public class JobDataTests
          ApplicationName = "test-app",
          JobName = "test-job",
          JobGroup = "test-group",
+         Culture = "nl-NL",
+         UICulture = "de-DE",
          PerformAt = performAt
       };
 
@@ -62,6 +67,33 @@ public class JobDataTests
       result.PerformAt.Should().Be(performAt);
       result.Options.JobName.Should().Be("test-job");
       result.Options.Group.Should().Be("test-group");
+      result.CultureName.Should().Be("nl-NL");
+      result.UICultureName.Should().Be("de-DE");
+   }
+
+   [Theory]
+   [InlineData("nl-NL", "de-DE")]   // distinct formatting and UI cultures
+   [InlineData("", "")]             // invariant culture
+   [InlineData(null, null)]         // no captured culture
+   public void FromJobStoreItem_ThenToJobStoreItem_PreservesCulture(string? culture, string? uiCulture)
+   {
+      // Arrange
+      var item = new JobStoreItem {
+         JobType = typeof(object),
+         Parameters = "test-parameter",
+         Options = new JobScheduleOptions { JobName = "test-job" },
+         PerformAt = DateTime.UtcNow,
+         CultureName = culture,
+         UICultureName = uiCulture
+      };
+
+      // Act
+      var roundTripped = JobData.FromJobStoreItem("test-app", item).ToJobStoreItem();
+
+      // Assert
+      roundTripped.Should().NotBeNull();
+      roundTripped!.CultureName.Should().Be(culture);
+      roundTripped.UICultureName.Should().Be(uiCulture);
    }
 
    private static string Resolve(string token, Type fallback) =>

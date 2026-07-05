@@ -240,7 +240,12 @@ public abstract class JobSchedulerTests
             expected,
             config =>
             {
-               EquivalencyOptions<JobStoreItem> withoutId = config.Excluding(x => x.JobId);
+               // Culture is auto-captured (ambient for asap/at, invariant for cron) and host-dependent, so it is
+               // excluded here like JobId; its round-trip is covered by the dedicated culture tests.
+               EquivalencyOptions<JobStoreItem> withoutId = config
+                  .Excluding(x => x.JobId)
+                  .Excluding(x => x.CultureName)
+                  .Excluding(x => x.UICultureName);
                return excludeJobName ? withoutId.Excluding(x => x.Options.JobName) : withoutId;
             });
    }

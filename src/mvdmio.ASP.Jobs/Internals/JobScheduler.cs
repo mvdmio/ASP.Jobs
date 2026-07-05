@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -61,7 +62,7 @@ internal sealed class JobScheduler : IJobScheduler
       where TJob : Job<TParameters>
       where TParameters : class
    {
-      return PerformAsapAsync<TJob, TParameters>(parameters, new JobScheduleOptions(), ct);
+      return ScheduleAsapAsync<TJob, TParameters>(parameters, new JobScheduleOptions(), CultureInfo.CurrentCulture.Name, CultureInfo.CurrentUICulture.Name, ct);
    }
 
    public async Task PerformAsapAsync<TJob, TParameters>(IEnumerable<TParameters> parameters, CancellationToken ct = default)
@@ -71,13 +72,56 @@ internal sealed class JobScheduler : IJobScheduler
       if (parameters is null)
          throw new ArgumentNullException(nameof(parameters));
 
+      // Capture the scheduling thread's culture once for the whole batch, before any await.
+      var cultureName = CultureInfo.CurrentCulture.Name;
+      var uiCultureName = CultureInfo.CurrentUICulture.Name;
+
       foreach (var parameter in parameters)
       {
-         await PerformAsapAsync<TJob, TParameters>(parameter, ct);
+         await ScheduleAsapAsync<TJob, TParameters>(parameter, new JobScheduleOptions(), cultureName, uiCultureName, ct);
       }
    }
 
-   public async Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions? options = null, CancellationToken ct = default)
+   public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions? options = null, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      return ScheduleAsapAsync<TJob, TParameters>(parameters, options ?? new JobScheduleOptions(), CultureInfo.CurrentCulture.Name, CultureInfo.CurrentUICulture.Name, ct);
+   }
+
+   public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      ArgumentNullException.ThrowIfNull(culture);
+      return ScheduleAsapAsync<TJob, TParameters>(parameters, new JobScheduleOptions(), culture.Name, culture.Name, ct);
+   }
+
+   public async Task PerformAsapAsync<TJob, TParameters>(IEnumerable<TParameters> parameters, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      if (parameters is null)
+         throw new ArgumentNullException(nameof(parameters));
+
+      ArgumentNullException.ThrowIfNull(culture);
+
+      foreach (var parameter in parameters)
+      {
+         await ScheduleAsapAsync<TJob, TParameters>(parameter, new JobScheduleOptions(), culture.Name, culture.Name, ct);
+      }
+   }
+
+   public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions options, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      ArgumentNullException.ThrowIfNull(options);
+      ArgumentNullException.ThrowIfNull(culture);
+      return ScheduleAsapAsync<TJob, TParameters>(parameters, options, culture.Name, culture.Name, ct);
+   }
+
+   private async Task ScheduleAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions options, string cultureName, string uiCultureName, CancellationToken ct)
       where TJob : Job<TParameters>
       where TParameters : class
    {
@@ -95,7 +139,9 @@ internal sealed class JobScheduler : IJobScheduler
                JobType = typeof(TJob),
                PerformAt = _clock.UtcNow,
                Parameters = parameters,
-               Options = options ?? new JobScheduleOptions()
+               Options = options,
+               CultureName = cultureName,
+               UICultureName = uiCultureName
             },
             ct
          );
@@ -113,7 +159,7 @@ internal sealed class JobScheduler : IJobScheduler
       where TJob : Job<TParameters>
       where TParameters : class
    {
-      return PerformAtAsync<TJob, TParameters>(performAtUtc, parameters, new JobScheduleOptions(), ct);
+      return ScheduleAtAsync<TJob, TParameters>(performAtUtc, parameters, new JobScheduleOptions(), CultureInfo.CurrentCulture.Name, CultureInfo.CurrentUICulture.Name, ct);
    }
 
    public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<TParameters> parameters, CancellationToken ct = default)
@@ -123,13 +169,56 @@ internal sealed class JobScheduler : IJobScheduler
       if (parameters is null)
          throw new ArgumentNullException(nameof(parameters));
 
+      // Capture the scheduling thread's culture once for the whole batch, before any await.
+      var cultureName = CultureInfo.CurrentCulture.Name;
+      var uiCultureName = CultureInfo.CurrentUICulture.Name;
+
       foreach(var parameter in parameters)
       {
-         await PerformAtAsync<TJob, TParameters>(performAtUtc, parameter, ct);
+         await ScheduleAtAsync<TJob, TParameters>(performAtUtc, parameter, new JobScheduleOptions(), cultureName, uiCultureName, ct);
       }
    }
 
-   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions? options = null, CancellationToken ct = default)
+   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions? options = null, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      return ScheduleAtAsync<TJob, TParameters>(performAtUtc, parameters, options ?? new JobScheduleOptions(), CultureInfo.CurrentCulture.Name, CultureInfo.CurrentUICulture.Name, ct);
+   }
+
+   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      ArgumentNullException.ThrowIfNull(culture);
+      return ScheduleAtAsync<TJob, TParameters>(performAtUtc, parameters, new JobScheduleOptions(), culture.Name, culture.Name, ct);
+   }
+
+   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<TParameters> parameters, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      if (parameters is null)
+         throw new ArgumentNullException(nameof(parameters));
+
+      ArgumentNullException.ThrowIfNull(culture);
+
+      foreach(var parameter in parameters)
+      {
+         await ScheduleAtAsync<TJob, TParameters>(performAtUtc, parameter, new JobScheduleOptions(), culture.Name, culture.Name, ct);
+      }
+   }
+
+   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions options, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      ArgumentNullException.ThrowIfNull(options);
+      ArgumentNullException.ThrowIfNull(culture);
+      return ScheduleAtAsync<TJob, TParameters>(performAtUtc, parameters, options, culture.Name, culture.Name, ct);
+   }
+
+   private async Task ScheduleAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions options, string cultureName, string uiCultureName, CancellationToken ct)
       where TJob : Job<TParameters>
       where TParameters : class
    {
@@ -147,7 +236,9 @@ internal sealed class JobScheduler : IJobScheduler
                JobType = typeof(TJob),
                PerformAt = performAtUtc,
                Parameters = parameters,
-               Options = options ?? new JobScheduleOptions()
+               Options = options,
+               CultureName = cultureName,
+               UICultureName = uiCultureName
             },
             ct
          );
@@ -168,7 +259,31 @@ internal sealed class JobScheduler : IJobScheduler
       return PerformCronAsync<TJob, TParameters>(CronExpression.Parse(cronExpression), parameters, runImmediately, ct);
    }
 
-   public async Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken ct = default)
+   public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately = false, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      // CRON jobs default to the invariant culture rather than the scheduling thread's culture, since they are
+      // typically registered at application startup where the thread culture is not meaningful.
+      return ScheduleCronAsync<TJob, TParameters>(cronExpression, parameters, runImmediately, CultureInfo.InvariantCulture.Name, CultureInfo.InvariantCulture.Name, ct);
+   }
+
+   public Task PerformCronAsync<TJob, TParameters>(string cronExpression, TParameters parameters, CultureInfo culture, bool runImmediately = false, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      return PerformCronAsync<TJob, TParameters>(CronExpression.Parse(cronExpression), parameters, culture, runImmediately, ct);
+   }
+
+   public Task PerformCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, CultureInfo culture, bool runImmediately = false, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      ArgumentNullException.ThrowIfNull(culture);
+      return ScheduleCronAsync<TJob, TParameters>(cronExpression, parameters, runImmediately, culture.Name, culture.Name, ct);
+   }
+
+   private async Task ScheduleCronAsync<TJob, TParameters>(CronExpression cronExpression, TParameters parameters, bool runImmediately, string cultureName, string uiCultureName, CancellationToken ct)
       where TJob : Job<TParameters>
       where TParameters : class
    {
@@ -194,7 +309,9 @@ internal sealed class JobScheduler : IJobScheduler
                PerformAt = _clock.UtcNow,
                Parameters = parameters,
                Options = scheduleOptions,
-               CronExpression = cronExpression
+               CronExpression = cronExpression,
+               CultureName = cultureName,
+               UICultureName = uiCultureName
             };
 
             await _jobStorage.ScheduleJobAsync(jobItem, ct);
@@ -210,7 +327,9 @@ internal sealed class JobScheduler : IJobScheduler
                PerformAt = nextOccurence.Value,
                Parameters = parameters,
                Options = scheduleOptions,
-               CronExpression = cronExpression
+               CronExpression = cronExpression,
+               CultureName = cultureName,
+               UICultureName = uiCultureName
             };
 
             await _jobStorage.ScheduleJobAsync(jobItem, ct);

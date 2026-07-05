@@ -53,6 +53,16 @@ internal sealed class JobData
    public required string? JobGroup { get; init; }
    
    /// <summary>
+   ///    Gets the name of the formatting culture the job runs under, or null if no culture was captured.
+   /// </summary>
+   public required string? Culture { get; init; }
+
+   /// <summary>
+   ///    Gets the name of the UI culture the job runs under, or null if no culture was captured.
+   /// </summary>
+   public required string? UICulture { get; init; }
+
+   /// <summary>
    ///    Gets the UTC time at which the job should be performed.
    /// </summary>
    public required DateTime PerformAt { get; init; }
@@ -84,6 +94,8 @@ internal sealed class JobData
          ApplicationName = applicationName,
          JobName = jobStoreItem.Options.JobName,
          JobGroup = jobStoreItem.Options.Group,
+         Culture = jobStoreItem.CultureName,
+         UICulture = jobStoreItem.UICultureName,
          PerformAt = jobStoreItem.PerformAt,
          StartedAt = null
       };
@@ -106,6 +118,8 @@ internal sealed class JobData
          JobType = jobType,
          Parameters = JsonSerializer.Deserialize(ParametersJson, parametersType, JobParameterJsonOptions.Options)!,
          CronExpression = ParseCronExpression(CronExpression),
+         CultureName = Culture,
+         UICultureName = UICulture,
          PerformAt = PerformAt,
          Options = new JobScheduleOptions {
             JobName = JobName,

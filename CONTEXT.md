@@ -24,6 +24,24 @@ _Avoid_: initialization, startup
 A single running process that may schedule and/or execute jobs. Identified by `InstanceId`. Many Worker Instances can share one database.
 _Avoid_: node, server, client
 
+### Culture
+
+**Captured Culture**:
+The formatting culture and UI culture recorded against a scheduled job, defining the locale its execution must run under. Represented purely by culture name; a job that carries none (e.g. a job scheduled before this feature existed) has no Captured Culture, which is distinct from having captured the invariant culture.
+_Avoid_: locale, thread culture
+
+**Culture Capture**:
+Recording a job's Captured Culture at the moment it is scheduled — from an explicitly supplied culture, or else from the scheduling thread (for CRON, from the invariant culture rather than the thread).
+_Avoid_: culture snapshot, freeze
+
+**Culture Reapplication**:
+Setting the executing thread to a job's Captured Culture for the duration of its run, then restoring the thread's original culture afterwards. Only the execution path (the runner) reapplies; immediate in-line execution keeps the caller's ambient culture untouched.
+_Avoid_: culture restore (that names the after-run cleanup, not the act of applying)
+
+**Culture Propagation**:
+A running job that schedules further jobs hands its Captured Culture down to them, because the child's Culture Capture reads the parent's reapplied ambient culture. Recurring CRON occurrences carry the same Captured Culture forward to the next occurrence.
+_Avoid_: culture inheritance, flow
+
 ## Flagged ambiguities
 
 - **"Initialization" historically meant two different things.** `PostgresInitializationService` performed *Instance Registration*, while the actual *Initialization* (migrations) happened lazily inside storage. Going forward, "Initialization" means migrations only; instance announcement is always called *Instance Registration*.

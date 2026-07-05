@@ -24,7 +24,11 @@ internal sealed class JobRunnerHarness
       Storage = new InMemoryJobStorage(Clock);
 
       var services = new JobTestServices().Services;
+      services.RegisterJob<CultureRecordingJob>();
+      services.RegisterJob<CultureChildSchedulingJob>();
       services.AddSingleton<IJobStorage>(Storage);
+      // Register IJobScheduler so jobs that schedule further jobs (e.g. CultureChildSchedulingJob) can resolve it.
+      services.AddSingleton<IJobScheduler>(sp => new JobScheduler(sp, Storage, Clock));
       var serviceProvider = services.BuildServiceProvider();
 
       var options = Options.Create(new JobRunnerOptions {
@@ -32,7 +36,7 @@ internal sealed class JobRunnerHarness
          JobChannelCapacity = jobChannelCapacity
       });
 
-      Scheduler = new JobScheduler(serviceProvider, Storage, Clock);
+      Scheduler = (JobScheduler)serviceProvider.GetRequiredService<IJobScheduler>();
       Runner = new JobRunnerService(serviceProvider, options, NullLogger<JobRunnerService>.Instance);
    }
 

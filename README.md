@@ -107,6 +107,40 @@ jobScheduler.PerformCronAsync<MyJob>("0 0 * * 0", new MyJobParameters());   // R
 jobScheduler.PerformCronAsync<MyJob>("0 0 1 * *", new MyJobParameters());   // Run once a month at midnight of the first day of the month
 ```
 
+## Culture
+
+Scheduled jobs run later on background threads whose culture is arbitrary. To keep locale-sensitive work (date/number
+formatting, translated resources) correct, every scheduled job captures a culture when it is scheduled and runs under
+that culture — both `CurrentCulture` and `CurrentUICulture` — when it executes.
+
+By default:
+
+- `PerformAsapAsync` and `PerformAtAsync` capture the **scheduling thread's** culture (e.g. the user's culture on an
+  ASP.NET request thread). `CurrentCulture` and `CurrentUICulture` are captured independently.
+- `PerformCronAsync` defaults to the **invariant** culture, since CRON jobs are usually registered at application
+  startup where the thread culture is not meaningful.
+- `PerformNowAsync` runs inline on the calling thread, so it already uses your current culture — nothing is captured.
+
+To pin a job to a specific culture, pass a `CultureInfo` (applied to both the formatting and UI culture):
+
+```csharp
+var culture = new CultureInfo("nl-NL");
+
+await _jobScheduler.PerformAsapAsync<MyJob, MyJobParameters>(new MyJobParameters(), culture);
+await _jobScheduler.PerformAtAsync<MyJob, MyJobParameters>(DateTime.UtcNow.AddHours(1), new MyJobParameters(), culture);
+_jobScheduler.PerformCronAsync<MyJob, MyJobParameters>("0 0 * * *", new MyJobParameters(), culture);
+```
+
+A job that schedules further jobs propagates its culture automatically — while the job runs, its culture is the ambient
+culture, so any job it schedules (without an explicit culture) captures it. CRON occurrences keep running in the culture
+the CRON was registered with.
+
+> Notes:
+> - Only the culture **name** is stored, so a customized `CultureInfo` (hand-tweaked `NumberFormat`/`DateTimeFormat`)
+>   falls back to its base culture.
+> - If a captured culture cannot be resolved when the job executes (e.g. the app runs with `InvariantGlobalization`
+>   enabled, or the host is missing that culture), the job fails through the normal failure path (`OnJobFailedAsync`).
+
 ## .NET Framework
 
 It is possible to use this library in .NET Framework applications. However, since those applications don't generally use
