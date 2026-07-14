@@ -141,6 +141,62 @@ the CRON was registered with.
 > - If a captured culture cannot be resolved when the job executes (e.g. the app runs with `InvariantGlobalization`
 >   enabled, or the host is missing that culture), the job fails through the normal failure path (`OnJobFailedAsync`).
 
+## Retry Policy
+
+A Job can declare a **Retry Policy**: an ordered list of exception-typed behaviors that tells the library which
+failures are worth retrying, how many times, and with what delay. A retry is a reschedule of the same job through
+storage - not an in-process loop - so retries survive an application restart, respect `MaxConcurrentJobs`, and work
+across multiple Worker Instances.
+
+```csharp
+public class MyJob : Job<MyJobParameters>
+{
+    public override RetryPolicy RetryPolicy => [
+        new RetryBehavior<HttpRequestException> {
+            MaxRetries = 5,
+            InitialDelay = TimeSpan.FromSeconds(1),
+            BackoffFactor = 2.0,             // optional, defaults to 1.0 (a fixed delay)
+            MaxDelay = TimeSpan.FromMinutes(1) // optional cap
+        },
+        new RetryBehavior<TimeoutException> {
+            MaxRetries = 3,
+            InitialDelay = TimeSpan.FromSeconds(30) // fixed 30s delay between attempts
+        }
+    ];
+
+    public override async Task ExecuteAsync(MyJobParameters parameters, CancellationToken cancellationToken)
+    {
+        // Your job logic here
+    }
+
+    public override Task OnJobRetryAsync(MyJobParameters parameters, Exception exception, RetryContext retryContext, CancellationToken cancellationToken)
+    {
+        // Called before each retry is written to storage. Use it for logging or metrics.
+        return Task.CompletedTask;
+    }
+}
+```
+
+A job without a `RetryPolicy` override behaves exactly as it always has: a single failed attempt calls
+`OnJobFailedAsync` and the job is done.
+
+**Matching** follows catch-clause semantics: the first declared `RetryBehavior` whose exception type matches the
+thrown exception (via inheritance, e.g. a behavior declared for `IOException` also matches `FileNotFoundException`)
+wins. An exception that matches no declared behavior is not retried - `OnJobFailedAsync` fires immediately, same as
+without a policy. `MaxRetries` excludes the first attempt: a value of `5` allows up to 5 retries after the initial
+failure. The delay before retry *n* is `InitialDelay * BackoffFactor^(n-1)`, capped at `MaxDelay` when set.
+
+**`OnJobFailedAsync` only fires once the Execution Chain definitively fails** - the retry budget is depleted, or the
+exception doesn't match any declared behavior. It never fires for an attempt that is going to be retried.
+
+**Idempotency obligation:** because a retry re-executes the same job with the same parameters, `ExecuteAsync` must be
+safe to run more than once for the same logical unit of work. There is no jitter in v1, so jobs that fail
+simultaneously (e.g. a shared dependency going down) will retry simultaneously too.
+
+**`PerformNowAsync` ignores the Retry Policy.** Running a job "now" is a direct, synchronous invocation in the
+caller's context, not a scheduled Execution Chain - an exception propagates straight to the caller, exactly as it
+does today.
+
 ## .NET Framework
 
 It is possible to use this library in .NET Framework applications. However, since those applications don't generally use

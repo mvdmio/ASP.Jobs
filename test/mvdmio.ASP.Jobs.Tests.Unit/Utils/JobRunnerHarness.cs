@@ -17,6 +17,7 @@ internal sealed class JobRunnerHarness
    public InMemoryJobStorage Storage { get; }
    public JobScheduler Scheduler { get; }
    public JobRunnerService Runner { get; }
+   public TestJobRetryPolicyProvider RetryPolicyProvider { get; }
 
    public JobRunnerHarness(int maxConcurrentJobs = 10, int jobChannelCapacity = 50)
    {
@@ -31,13 +32,15 @@ internal sealed class JobRunnerHarness
       services.AddSingleton<IJobScheduler>(sp => new JobScheduler(sp, Storage, Clock));
       var serviceProvider = services.BuildServiceProvider();
 
+      RetryPolicyProvider = serviceProvider.GetRequiredService<TestJobRetryPolicyProvider>();
+
       var options = Options.Create(new JobRunnerOptions {
          MaxConcurrentJobs = maxConcurrentJobs,
          JobChannelCapacity = jobChannelCapacity
       });
 
       Scheduler = (JobScheduler)serviceProvider.GetRequiredService<IJobScheduler>();
-      Runner = new JobRunnerService(serviceProvider, options, NullLogger<JobRunnerService>.Instance);
+      Runner = new JobRunnerService(serviceProvider, options, NullLogger<JobRunnerService>.Instance, Clock);
    }
 
    /// <summary>

@@ -13,6 +13,7 @@ using mvdmio.ASP.Jobs.Utils;
 using mvdmio.Database.PgSQL;
 using mvdmio.Database.PgSQL.Dapper.QueryParameters;
 using mvdmio.Database.PgSQL.Migrations;
+using Npgsql;
 using NpgsqlTypes;
 
 namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
@@ -82,7 +83,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                 parameters_json = EXCLUDED.parameters_json,
                 culture = EXCLUDED.culture,
                 ui_culture = EXCLUDED.ui_culture,
-                perform_at = EXCLUDED.perform_at
+                perform_at = EXCLUDED.perform_at,
+                attempt = 0
             """,
             new Dictionary<string, object?> {
                { "id", job.Id },
@@ -130,7 +132,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                   LIMIT 1
                   FOR UPDATE SKIP LOCKED
                )
-               RETURNING id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by
+               RETURNING id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt
                """,
                new Dictionary<string, object?> {
                   { "now", now },
@@ -188,13 +190,78 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       );
    }
 
+   public async Task<bool> TryScheduleRetryAsync(JobStoreItem job, DateTime nextAttemptAtUtc, CancellationToken ct = default)
+   {
+      ThrowIfNotInitialized();
+
+      try
+      {
+         var updatedId = await Db.Dapper.QueryFirstOrDefaultAsync<Guid?>(
+            """
+            UPDATE mvdmio.jobs
+            SET perform_at = :perform_at,
+                attempt = attempt + 1,
+                started_at = NULL,
+                started_by = NULL
+            WHERE id = :id
+              AND application_name = :application_name
+              AND NOT EXISTS (
+                 SELECT 1
+                 FROM mvdmio.jobs other
+                 WHERE other.application_name = :application_name
+                   AND other.job_name = :job_name
+                   AND other.started_at IS NULL
+                   AND other.id <> :id
+              )
+            RETURNING id
+            """,
+            new Dictionary<string, object?> {
+               { "id", job.JobId },
+               { "perform_at", nextAttemptAtUtc },
+               { "application_name", Configuration.ApplicationName },
+               { "job_name", job.Options.JobName }
+            },
+            ct: ct
+         );
+
+         if (updatedId is null)
+         {
+            // A different pending job with the same name already exists - the chain is superseded.
+            await SupersedeRetryAsync(job, "a newer pending job of the same name", null, ct);
+            return false;
+         }
+
+         await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
+         return true;
+      }
+      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+      {
+         // A same-name job was inserted concurrently between our NOT EXISTS check and the UPDATE commit - treat as supersession.
+         await SupersedeRetryAsync(job, "a concurrently-scheduled job of the same name", ex, ct);
+         return false;
+      }
+   }
+
+   private async Task SupersedeRetryAsync(JobStoreItem job, string supersededByDescription, PostgresException? exception, CancellationToken ct)
+   {
+      _logger.LogInformation(
+         exception,
+         "Job chain '{JobName}' (ID: {JobId}) was superseded by {SupersededByDescription}; the retry was not written.",
+         job.Options.JobName,
+         job.JobId,
+         supersededByDescription
+      );
+
+      await DeleteJobByIdAsync(job.JobId, ct);
+   }
+
    public async Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
    {
       ThrowIfNotInitialized();
 
       var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt
          FROM mvdmio.jobs
          WHERE started_at IS NULL
          ORDER BY perform_at, created_at
@@ -211,7 +278,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
       var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt
          FROM mvdmio.jobs
          WHERE started_at IS NOT NULL
          ORDER BY perform_at, created_at

@@ -35,6 +35,18 @@ public interface IJob
    ///    Use this method for any work that needs to be done when a job fails.
    /// </summary>
    internal Task OnJobFailedAsync(object parameters, Exception exception, CancellationToken cancellationToken);
+
+   /// <summary>
+   ///    Method called after a failed execution is rescheduled as a retry, before the retry is written to storage.
+   ///    Use this method for logging or metrics on a per-attempt basis.
+   /// </summary>
+   internal Task OnJobRetryAsync(object parameters, Exception exception, RetryContext retryContext, CancellationToken cancellationToken);
+
+   /// <summary>
+   ///    The Job's Retry Policy, declaring which exceptions should be retried, how many times, and with what delay.
+   ///    An empty policy (the default) means the job is never retried.
+   /// </summary>
+   internal RetryPolicy RetryPolicy { get; }
 }
 
 /// <summary>
@@ -76,6 +88,16 @@ public abstract class Job<TProperties> : IJob
       else
          throw new ArgumentException($"Expected properties of type {typeof(TProperties).Name}, but got {properties.GetType().Name}.");
    }
+
+   async Task IJob.OnJobRetryAsync(object properties, Exception exception, RetryContext retryContext, CancellationToken cancellationToken)
+   {
+      if (properties is TProperties typedProperties)
+         await OnJobRetryAsync(typedProperties, exception, retryContext, cancellationToken);
+      else
+         throw new ArgumentException($"Expected properties of type {typeof(TProperties).Name}, but got {properties.GetType().Name}.");
+   }
+
+   RetryPolicy IJob.RetryPolicy => RetryPolicy;
 
    /// <summary>
    ///    Method called when the job is scheduled.
@@ -123,6 +145,27 @@ public abstract class Job<TProperties> : IJob
    {
       return Task.CompletedTask;
    }
+
+   /// <summary>
+   ///    Method called after a failed execution is rescheduled as a retry, before the retry is written to storage.
+   ///    Use this method for logging or metrics on a per-attempt basis. A throw from this method is logged and never
+   ///    alters whether the retry is written.
+   /// </summary>
+   /// <param name="parameters">The job parameters.</param>
+   /// <param name="exception">The exception that caused this retry.</param>
+   /// <param name="retryContext">The attempt number, retry budget, and next attempt time for this retry.</param>
+   /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
+   public virtual Task OnJobRetryAsync(TProperties parameters, Exception exception, RetryContext retryContext, CancellationToken cancellationToken)
+   {
+      return Task.CompletedTask;
+   }
+
+   /// <summary>
+   ///    The Job's Retry Policy, declaring which exceptions should be retried, how many times, and with what delay.
+   ///    Defaults to an empty policy: without an override, a job behaves exactly as it would without a Retry Policy.
+   /// </summary>
+   public virtual RetryPolicy RetryPolicy => new();
 }
 
 /// <summary>

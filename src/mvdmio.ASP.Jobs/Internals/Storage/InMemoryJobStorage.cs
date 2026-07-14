@@ -138,6 +138,45 @@ internal sealed class InMemoryJobStorage : IJobStorage
       }
    }
 
+   public async Task<bool> TryScheduleRetryAsync(JobStoreItem job, DateTime nextAttemptAtUtc, CancellationToken ct = default)
+   {
+      await _jobQueueLock.WaitAsync(ct);
+
+      try
+      {
+         if (_scheduledJobs.ContainsKey(job.Options.JobName))
+         {
+            // A different pending job with the same name already exists - the chain is superseded. Wake waiters
+            // too: this job may have been blocking its group, and a group-mate could now be eligible to run.
+            _inProgressJobs.Remove(job.JobId);
+            SendWakeSignal();
+            return false;
+         }
+
+         var retryItem = new JobStoreItem {
+            JobId = job.JobId,
+            JobType = job.JobType,
+            Parameters = job.Parameters,
+            Options = job.Options,
+            PerformAt = nextAttemptAtUtc,
+            CronExpression = job.CronExpression,
+            CultureName = job.CultureName,
+            UICultureName = job.UICultureName,
+            Attempt = job.Attempt + 1
+         };
+
+         _inProgressJobs.Remove(job.JobId);
+         _scheduledJobs[job.Options.JobName] = retryItem;
+         SendWakeSignal();
+
+         return true;
+      }
+      finally
+      {
+         _jobQueueLock.Release();
+      }
+   }
+
    public Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
    {
       return Task.FromResult(ScheduledJobs);

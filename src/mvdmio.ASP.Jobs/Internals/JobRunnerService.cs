@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
+using mvdmio.ASP.Jobs.Utils;
 
 namespace mvdmio.ASP.Jobs.Internals;
 
@@ -22,13 +23,14 @@ internal sealed class JobRunnerService : BackgroundService
 {
    // OpenTelemetry tracing setup
    private static readonly ActivitySource _openTelemetry = new("mvdmio.ASP.Jobs");
-   
+
    private readonly IOptions<JobRunnerOptions> _options;
    private readonly ILogger<JobRunnerService> _logger;
    private readonly IServiceProvider _services;
+   private readonly IClock _clock;
 
    private IJobStorage _jobStorage = null!;
-   
+
    private JobRunnerOptions Configuration => _options.Value;
 
    /// <summary>
@@ -37,11 +39,13 @@ internal sealed class JobRunnerService : BackgroundService
    /// <param name="services">The service provider for resolving job instances.</param>
    /// <param name="options">The job runner configuration options.</param>
    /// <param name="logger">The logger for job runner operations.</param>
-   public JobRunnerService(IServiceProvider services, IOptions<JobRunnerOptions> options, ILogger<JobRunnerService> logger)
+   /// <param name="clock">The clock used to compute retry attempt times.</param>
+   public JobRunnerService(IServiceProvider services, IOptions<JobRunnerOptions> options, ILogger<JobRunnerService> logger, IClock clock)
    {
       _services = services;
       _options = options;
       _logger = logger;
+      _clock = clock;
    }
 
    /// <inheritdoc />
@@ -189,7 +193,7 @@ internal sealed class JobRunnerService : BackgroundService
 
       await using var scope = _services.CreateAsyncScope();
       var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
-      
+
       // OpenTelemetry tracing
       using var activity = _openTelemetry.StartActivity();
 
@@ -201,6 +205,10 @@ internal sealed class JobRunnerService : BackgroundService
       activity?.SetTag("job.group", jobBusItem.Options.Group);
       activity?.SetTag("job.parameters", jobBusItem.Parameters);
       activity?.SetTag("job.cron", jobBusItem.CronExpression?.ToString());
+      activity?.SetTag("job.attempt", jobBusItem.Attempt);
+
+      Exception? executionException = null;
+      var wasCanceled = false;
 
       // Save the thread's culture so we can restore it after the job runs; jobs run on shared thread-pool
       // threads, so without a restore one job's Captured Culture would leak into the next job on that thread.
@@ -209,59 +217,167 @@ internal sealed class JobRunnerService : BackgroundService
 
       try
       {
-         try
-         {
-            // Resolving/applying the Captured Culture happens inside the try on purpose: an unresolvable culture
-            // then rides the normal job-failure path (logged + OnJobFailedAsync) instead of being lost on this
-            // fire-and-forget task.
-            ApplyCapturedCulture(jobBusItem);
+         // Resolving/applying the Captured Culture happens inside the try on purpose: an unresolvable culture
+         // then rides the normal job-failure path (logged + OnJobFailedAsync) instead of being lost on this
+         // fire-and-forget task.
+         ApplyCapturedCulture(jobBusItem);
 
-            _logger.LogInformation("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
-            activity?.AddEvent(new ActivityEvent("Job Started"));
+         _logger.LogInformation("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+         activity?.AddEvent(new ActivityEvent("Job Started"));
 
-            await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
-            await job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken);
+         await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
 
-            activity?.AddEvent(new ActivityEvent("Job Completed"));
-            activity?.SetStatus(ActivityStatusCode.Ok, "Job completed successfully");
+         activity?.AddEvent(new ActivityEvent("Job Completed"));
+         activity?.SetStatus(ActivityStatusCode.Ok, "Job completed successfully");
 
-            var endTime = Stopwatch.GetTimestamp();
-            var duration = new TimeSpan(endTime - startTime);
-            _logger.LogInformation("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
-         }
-         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-         {
-            // Ignore cancellation exceptions; they are expected when the service is stopped.
-            activity?.AddEvent(new ActivityEvent("Job Canceled"));
-         }
-         catch (Exception e)
-         {
-            _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+         var endTime = Stopwatch.GetTimestamp();
+         var duration = new TimeSpan(endTime - startTime);
+         _logger.LogInformation("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
+      }
+      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      {
+         // Ignore cancellation exceptions; they are expected when the service is stopped.
+         wasCanceled = true;
+         activity?.AddEvent(new ActivityEvent("Job Canceled"));
+      }
+      catch (Exception e)
+      {
+         executionException = e;
 
-            activity?.AddException(e);
-            activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
+         _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
 
-            await job.OnJobFailedAsync(jobBusItem.Parameters, e, cancellationToken);
-         }
-         finally
-         {
-            CultureInfo.CurrentCulture = originalCulture;
-            CultureInfo.CurrentUICulture = originalUICulture;
-         }
+         activity?.AddException(e);
+         activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
       }
       finally
       {
-         try
-         {
-            await _jobStorage.FinalizeJobAsync(jobBusItem, cancellationToken);
+         CultureInfo.CurrentCulture = originalCulture;
+         CultureInfo.CurrentUICulture = originalUICulture;
+      }
 
-            if (jobBusItem.CronExpression is not null)
-               await ScheduleNextOccurrence(jobBusItem, cancellationToken);
-         }
-         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      if (wasCanceled)
+      {
+         // Cancellation during shutdown is not a failure and is not retried; the chain simply ends here.
+         await FinalizeChainAsync(jobBusItem, cancellationToken);
+         return;
+      }
+
+      if (executionException is null)
+      {
+         // Runner-side hooks are fire-safe observers: a throw is logged but never changes the chain outcome.
+         await InvokeHookSafelyAsync(() => job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken), nameof(IJob.OnJobExecutedAsync), jobBusItem.JobType);
+         await FinalizeChainAsync(jobBusItem, cancellationToken);
+         return;
+      }
+
+      var matchedBehavior = job.RetryPolicy.FindMatchingBehavior(executionException);
+
+      if (matchedBehavior is not null && jobBusItem.Attempt < matchedBehavior.MaxRetriesValue)
+      {
+         await RetryJobAsync(jobBusItem, job, executionException, matchedBehavior, activity, cancellationToken);
+         return;
+      }
+
+      // No matching behavior, or the retry budget is depleted: the chain ends in failure.
+      await InvokeHookSafelyAsync(() => job.OnJobFailedAsync(jobBusItem.Parameters, executionException, cancellationToken), nameof(IJob.OnJobFailedAsync), jobBusItem.JobType);
+      await FinalizeChainAsync(jobBusItem, cancellationToken);
+   }
+
+   private async Task RetryJobAsync(JobStoreItem jobBusItem, IJob job, Exception exception, RetryBehavior matchedBehavior, Activity? activity, CancellationToken cancellationToken)
+   {
+      var nextAttempt = jobBusItem.Attempt + 1;
+      var nextAttemptAtUtc = _clock.UtcNow + matchedBehavior.ComputeDelay(nextAttempt);
+
+      try
+      {
+         var scheduled = await _jobStorage.TryScheduleRetryAsync(jobBusItem, nextAttemptAtUtc, cancellationToken);
+
+         if (scheduled)
          {
-            // Ignore cancellation exceptions; they are expected when the service is stopped.
+            // Supersession is silent (no hooks fire) per ADR 0002, so OnJobRetryAsync only fires once the retry
+            // is confirmed written - a superseded chain never had a "retried attempt" in the first place.
+            var retryContext = new RetryContext {
+               Attempt = nextAttempt,
+               MaxRetries = matchedBehavior.MaxRetriesValue,
+               NextAttemptAtUtc = nextAttemptAtUtc
+            };
+
+            await InvokeHookSafelyAsync(() => job.OnJobRetryAsync(jobBusItem.Parameters, exception, retryContext, cancellationToken), nameof(IJob.OnJobRetryAsync), jobBusItem.JobType);
+
+            _logger.LogInformation(
+               "Retrying job {JobType} (attempt {Attempt}/{MaxRetries}) at {NextAttemptAtUtc} after: {ExceptionMessage}",
+               jobBusItem.JobType.Name,
+               nextAttempt,
+               matchedBehavior.MaxRetriesValue,
+               nextAttemptAtUtc,
+               exception.Message
+            );
+
+            activity?.AddEvent(
+               new ActivityEvent(
+                  "Job Retry Scheduled",
+                  tags: new ActivityTagsCollection {
+                     { "retry.attempt", nextAttempt },
+                     { "retry.max_retries", matchedBehavior.MaxRetriesValue },
+                     { "retry.next_attempt_at_utc", nextAttemptAtUtc.ToString("O") }
+                  }
+               )
+            );
          }
+         else
+         {
+            _logger.LogInformation(
+               "Job chain for {JobType} ('{JobName}') was superseded by a newer scheduled job; abandoning the retry.",
+               jobBusItem.JobType.Name,
+               jobBusItem.Options.JobName
+            );
+
+            activity?.AddEvent(new ActivityEvent("Job Chain Superseded"));
+         }
+      }
+      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      {
+         // Ignore cancellation exceptions; they are expected when the service is stopped.
+      }
+   }
+
+   /// <summary>
+   ///    Ends an Execution Chain: removes the job from storage and, for CRON jobs, schedules the next occurrence.
+   ///    Only called when the chain actually ends (success, non-retryable/depleted failure, or cancellation) - never
+   ///    for a retry, since the chain continues under the same identity.
+   /// </summary>
+   private async Task FinalizeChainAsync(JobStoreItem jobBusItem, CancellationToken cancellationToken)
+   {
+      try
+      {
+         await _jobStorage.FinalizeJobAsync(jobBusItem, cancellationToken);
+
+         if (jobBusItem.CronExpression is not null)
+            await ScheduleNextOccurrence(jobBusItem, cancellationToken);
+      }
+      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      {
+         // Ignore cancellation exceptions; they are expected when the service is stopped.
+      }
+   }
+
+   /// <summary>
+   ///    Invokes a runner-side lifecycle hook (<see cref="IJob.OnJobExecutedAsync"/>, <see cref="IJob.OnJobFailedAsync"/>,
+   ///    <see cref="IJob.OnJobRetryAsync"/>) as a fire-safe observer: a throw is logged and never alters the chain outcome.
+   /// </summary>
+   private async Task InvokeHookSafelyAsync(Func<Task> hook, string hookName, Type jobType)
+   {
+      try
+      {
+         await hook();
+      }
+      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      {
+         // Expected during shutdown.
+      }
+      catch (Exception ex)
+      {
+         _logger.LogError(ex, "Error while executing {HookName} for job {JobType}", hookName, jobType.Name);
       }
    }
 

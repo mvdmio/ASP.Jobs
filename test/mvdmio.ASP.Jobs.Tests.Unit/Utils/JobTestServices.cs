@@ -9,6 +9,7 @@ public class JobTestServices
    public JobTestServices()
    {
       Services = new ServiceCollection();
+      Services.AddSingleton<TestJobRetryPolicyProvider>();
       Services.RegisterJob<TestJob>();
       Services.RegisterJob<ConcurrencyTrackingJob>();
    }

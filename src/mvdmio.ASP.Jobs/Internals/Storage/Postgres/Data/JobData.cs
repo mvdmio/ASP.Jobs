@@ -78,6 +78,11 @@ internal sealed class JobData
    public string? StartedBy { get; set; }
 
    /// <summary>
+   ///    Gets the number of retries already consumed by this Execution Chain (0 for a job that has not yet been retried).
+   /// </summary>
+   public int Attempt { get; init; }
+
+   /// <summary>
    ///    Creates a <see cref="JobData"/> instance from a <see cref="JobStoreItem"/>.
    /// </summary>
    /// <param name="applicationName">The application name to associate with the job.</param>
@@ -97,7 +102,8 @@ internal sealed class JobData
          Culture = jobStoreItem.CultureName,
          UICulture = jobStoreItem.UICultureName,
          PerformAt = jobStoreItem.PerformAt,
-         StartedAt = null
+         StartedAt = null,
+         Attempt = jobStoreItem.Attempt
       };
    }
 
@@ -121,6 +127,7 @@ internal sealed class JobData
          CultureName = Culture,
          UICultureName = UICulture,
          PerformAt = PerformAt,
+         Attempt = Attempt,
          Options = new JobScheduleOptions {
             JobName = JobName,
             Group = JobGroup

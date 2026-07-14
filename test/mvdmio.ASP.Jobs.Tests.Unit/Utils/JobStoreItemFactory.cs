@@ -18,7 +18,8 @@ internal static class JobStoreItemFactory
       string? group = null,
       DateTime? performAt = null,
       TestJob.Parameters? parameters = null,
-      bool useNullParameters = false)
+      bool useNullParameters = false,
+      int attempt = 0)
    {
       var options = new JobScheduleOptions {
          Group = group
@@ -35,7 +36,8 @@ internal static class JobStoreItemFactory
                Delay = TimeSpan.Zero
             },
          Options = options,
-         PerformAt = performAt ?? DateTime.UtcNow
+         PerformAt = performAt ?? DateTime.UtcNow,
+         Attempt = attempt
       };
    }
 }

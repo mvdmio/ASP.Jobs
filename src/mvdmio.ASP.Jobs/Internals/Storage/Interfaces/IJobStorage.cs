@@ -56,6 +56,18 @@ internal interface IJobStorage
    Task FinalizeJobAsync(JobStoreItem job, CancellationToken ct = default);
 
    /// <summary>
+   ///    Attempts to reschedule an in-progress job as a retry: moves it back to pending with <paramref name="nextAttemptAtUtc" />
+   ///    as its new <see cref="JobStoreItem.PerformAt" /> and its attempt counter incremented, and clears its claim so any
+   ///    Worker Instance can pick it up. If a different pending job with the same name already exists, the retry is not
+   ///    written and the Execution Chain is superseded: the in-progress row is removed instead.
+   /// </summary>
+   /// <param name="job">The in-progress job to reschedule as a retry.</param>
+   /// <param name="nextAttemptAtUtc">The UTC time at which the retry should run.</param>
+   /// <param name="ct">A token to observe for cancellation requests.</param>
+   /// <returns>True if the retry was written; false if the Execution Chain was superseded by a newer pending job of the same name.</returns>
+   Task<bool> TryScheduleRetryAsync(JobStoreItem job, DateTime nextAttemptAtUtc, CancellationToken ct = default);
+
+   /// <summary>
    ///    Retrieves all jobs that are scheduled but not yet in progress.
    /// </summary>
    /// <param name="ct">A token to observe for cancellation requests.</param>

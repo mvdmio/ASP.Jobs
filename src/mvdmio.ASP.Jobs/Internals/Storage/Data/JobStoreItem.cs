@@ -52,6 +52,11 @@ internal sealed class JobStoreItem
    public string? UICultureName { get; init; }
 
    /// <summary>
+   ///    Gets the number of retries already consumed by this Execution Chain (0 for a job that has not yet been retried).
+   /// </summary>
+   public int Attempt { get; init; }
+
+   /// <summary>
    ///    Generates a new GUID for job identification.
    /// </summary>
    /// <returns>A new GUID.</returns>

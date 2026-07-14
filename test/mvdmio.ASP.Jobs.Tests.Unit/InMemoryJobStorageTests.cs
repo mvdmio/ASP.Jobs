@@ -191,6 +191,61 @@ public class InMemoryJobStorageTests
       job2.Should().Be(scheduledJob2);
    }
 
+   [Fact]
+   public async Task TryScheduleRetryAsync_ShouldMoveJobBackToScheduled_WhenNoConflictingJobExists()
+   {
+      // Arrange
+      var jobItem = await AddNewJobStoreItem(id: "RetryJob");
+      var inProgress = await _sut.WaitForNextJobAsync(CancellationToken);
+      var nextAttemptAt = _clock.UtcNow.AddMinutes(1);
+
+      // Act
+      var result = await _sut.TryScheduleRetryAsync(inProgress!, nextAttemptAt, CancellationToken);
+
+      // Assert
+      result.Should().BeTrue();
+      _sut.InProgressJobs.Should().BeEmpty();
+      _sut.ScheduledJobs.Should().HaveCount(1);
+
+      var retried = _sut.ScheduledJobs.Single();
+      retried.JobId.Should().Be(jobItem.JobId);
+      retried.PerformAt.Should().Be(nextAttemptAt);
+      retried.Attempt.Should().Be(jobItem.Attempt + 1);
+   }
+
+   [Fact]
+   public async Task TryScheduleRetryAsync_ShouldIncrementAttempt_OnEachRetry()
+   {
+      // Arrange
+      _ = await AddNewJobStoreItem(id: "RetryJob");
+      var inProgress = await _sut.WaitForNextJobAsync(CancellationToken);
+
+      // Act
+      await _sut.TryScheduleRetryAsync(inProgress!, _clock.UtcNow.AddMinutes(1), CancellationToken);
+
+      // Assert
+      _sut.ScheduledJobs.Single().Attempt.Should().Be(1);
+   }
+
+   [Fact]
+   public async Task TryScheduleRetryAsync_ShouldSupersedeChain_WhenAnotherPendingJobWithSameNameExists()
+   {
+      // Arrange
+      _ = await AddNewJobStoreItem(id: "RetryJob");
+      var inProgress = await _sut.WaitForNextJobAsync(CancellationToken);
+
+      // A newer job is scheduled under the same name while the original attempt is in progress.
+      var supersedingJob = await AddNewJobStoreItem(id: "RetryJob");
+
+      // Act
+      var result = await _sut.TryScheduleRetryAsync(inProgress!, _clock.UtcNow.AddMinutes(1), CancellationToken);
+
+      // Assert
+      result.Should().BeFalse();
+      _sut.InProgressJobs.Should().BeEmpty();
+      _sut.ScheduledJobs.Should().ContainSingle().Which.Should().Be(supersedingJob);
+   }
+
    private async Task<JobStoreItem> AddNewJobStoreItem(DateTime? performAt = null, string? id = null, string? group = null)
    {
       var jobItem = JobStoreItemFactory.MakeTestJob(
