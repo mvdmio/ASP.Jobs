@@ -42,6 +42,26 @@ _Avoid_: culture restore (that names the after-run cleanup, not the act of apply
 A running job that schedules further jobs hands its Captured Culture down to them, because the child's Culture Capture reads the parent's reapplied ambient culture. Recurring CRON occurrences carry the same Captured Culture forward to the next occurrence.
 _Avoid_: culture inheritance, flow
 
+**Job**:
+The unit that defines *what* should be done — including how its own failures are handled (e.g. its Retry Policy). Authored by the client as a class; behavior travels with the code that can fail.
+_Avoid_: task, work item
+
+**Scheduler**:
+The component that defines *when* a Job should run (now, ASAP, at a time, on a CRON). It never decides what a Job does or how it recovers from failure.
+_Avoid_: dispatcher, queue
+
+**Retry Policy**:
+A Job's own declaration of which failures are worth retrying and how (per exception type, catch-clause semantics: inheritance matching, first declared match wins). Belongs to the Job, not to scheduling; a retry is a *reschedule through storage* of the same job with an incremented attempt count, not an in-process re-execution.
+_Avoid_: retry options (on the scheduler), error handling
+
+**Execution Chain**:
+One scheduled execution of a Job plus all of its retries. A chain ends in exactly one of: success, Retry Budget depleted, a non-retryable exception, or supersession (a newer job with the same name replaced the pending retry). The outcome is determined solely by `ExecuteAsync`; lifecycle hooks observe the outcome and can never alter it. Only when a chain ends does a CRON job calculate and schedule its next occurrence; `OnJobFailedAsync` fires only when a chain ends in failure.
+_Avoid_: run (ambiguous between attempt and chain)
+
+**Retry Budget**:
+The maximum number of retries a matched RetryBehavior allows for one Execution Chain (excluding the first attempt). Depleting it ends the chain in failure.
+_Avoid_: attempt limit (ambiguous about whether the first attempt counts)
+
 ## Flagged ambiguities
 
 - **"Initialization" historically meant two different things.** `PostgresInitializationService` performed *Instance Registration*, while the actual *Initialization* (migrations) happened lazily inside storage. Going forward, "Initialization" means migrations only; instance announcement is always called *Instance Registration*.
