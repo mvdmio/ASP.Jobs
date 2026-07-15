@@ -26,9 +26,13 @@ public abstract class RetryBehavior
    internal abstract int MaxRetriesValue { get; }
 
    /// <summary>
-   ///    Computes the delay before the given retry attempt (1-based, excluding the first attempt), applying backoff and the delay cap.
+   ///    Computes the delay before the given retry attempt (1-based, excluding the first attempt). Applies the
+   ///    behavior's exception-derived override (<see cref="RetryBehavior{TException}.RetryAfter" />) when it is set
+   ///    and returns non-null; otherwise falls back to backoff and the delay cap.
    /// </summary>
-   internal abstract TimeSpan ComputeDelay(int attempt);
+   /// <param name="exception">The exception that matched this behavior.</param>
+   /// <param name="attempt">The upcoming attempt number (1-based, excluding the first attempt).</param>
+   internal abstract TimeSpan ComputeDelay(Exception exception, int attempt);
 }
 
 /// <summary>
@@ -101,6 +105,17 @@ public sealed class RetryBehavior<TException> : RetryBehavior
          : throw new ArgumentOutOfRangeException(nameof(MaxDelay), value, "MaxDelay must be greater than or equal to InitialDelay.");
    }
 
+   /// <summary>
+   ///    Optional function that reads the retry delay directly out of the matched exception (e.g. a server-provided
+   ///    <c>Retry-After</c> value), invoked with the exception - strongly typed as <typeparamref name="TException" /> - and
+   ///    the upcoming attempt number. A non-null result is used verbatim as the delay before the next attempt -
+   ///    <b>bypassing <see cref="MaxDelay" /> entirely</b>: a server-directed wait is trusted as given, not clamped to a
+   ///    self-imposed cap. Returning <c>null</c> (or leaving this unset) falls back to the
+   ///    <see cref="InitialDelay" />/<see cref="BackoffFactor" />/<see cref="MaxDelay" /> computation, unchanged. A thrown
+   ///    exception or a negative result propagates as a failure of the retry attempt.
+   /// </summary>
+   public Func<TException, int, TimeSpan?>? RetryAfter { get; init; }
+
    internal override bool Matches(Exception exception)
    {
       return exception is TException;
@@ -108,8 +123,21 @@ public sealed class RetryBehavior<TException> : RetryBehavior
 
    internal override int MaxRetriesValue => MaxRetries;
 
-   internal override TimeSpan ComputeDelay(int attempt)
+   internal override TimeSpan ComputeDelay(Exception exception, int attempt)
    {
+      if (RetryAfter is not null)
+      {
+         var overrideDelay = RetryAfter((TException)exception, attempt);
+
+         if (overrideDelay is not null)
+         {
+            if (overrideDelay.Value < TimeSpan.Zero)
+               throw new InvalidOperationException($"RetryAfter returned a negative TimeSpan ({overrideDelay.Value}) for attempt {attempt}; it must be zero or positive.");
+
+            return overrideDelay.Value;
+         }
+      }
+
       var delay = InitialDelay * Math.Pow(BackoffFactor, attempt - 1);
 
       if (MaxDelay is not null && delay > MaxDelay.Value)

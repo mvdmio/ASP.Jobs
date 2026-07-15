@@ -288,6 +288,205 @@ public sealed class JobRunnerRetryTests
          .HaveCount(1, "exactly one next occurrence should be scheduled once the chain ends - not one for the failed attempt in between");
    }
 
+   [Fact]
+   public async Task RetryAfter_ReturnsValue_IsUsedVerbatim_EvenExceedingMaxDelay()
+   {
+      // Arrange
+      var retryAfterDelay = TimeSpan.FromHours(4);
+
+      _harness.RetryPolicyProvider.Policy = new RetryPolicy {
+         new RetryBehavior<InvalidOperationException> {
+            MaxRetries = 3,
+            InitialDelay = TimeSpan.FromSeconds(1),
+            MaxDelay = TimeSpan.FromSeconds(5), // deliberately far below RetryAfter's result
+            RetryAfter = (_, _) => retryAfterDelay
+         }
+      };
+
+      var parameters = new TestJob.Parameters {
+         FailuresBeforeSuccess = 1,
+         RetryableException = new InvalidOperationException("rate limited")
+      };
+
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+
+      // Act - a multi-hour delay never becomes due against the frozen TestClock within the test.
+      await RunUntilRetriesScheduledAsync(parameters);
+
+      // Assert
+      parameters.RetryContexts.Should().ContainSingle();
+      parameters.RetryContexts[0].NextAttemptAtUtc.Should().Be(_harness.Clock.UtcNow + retryAfterDelay, "RetryAfter's result must be honored exactly, not clamped to MaxDelay");
+   }
+
+   [Fact]
+   public async Task RetryAfter_ReturnsNull_FallsBackToNormalBackoffComputation()
+   {
+      // Arrange
+      _harness.RetryPolicyProvider.Policy = new RetryPolicy {
+         new RetryBehavior<InvalidOperationException> {
+            MaxRetries = 3,
+            InitialDelay = TimeSpan.FromSeconds(2),
+            RetryAfter = (_, _) => null
+         }
+      };
+
+      var parameters = new TestJob.Parameters {
+         FailuresBeforeSuccess = 1,
+         RetryableException = new InvalidOperationException("no override this time")
+      };
+
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+
+      // Act - a 2s delay never becomes due against the frozen TestClock within the test.
+      await RunUntilRetriesScheduledAsync(parameters);
+
+      // Assert
+      parameters.RetryContexts.Should().ContainSingle();
+      parameters.RetryContexts[0].NextAttemptAtUtc.Should().Be(_harness.Clock.UtcNow + TimeSpan.FromSeconds(2));
+   }
+
+   [Fact]
+   public async Task NoRetryAfterSet_BehavesExactlyAsBeforeTheFeatureExisted()
+   {
+      // Arrange - regression coverage: a RetryBehavior that never sets RetryAfter computes delay exactly as today.
+      _harness.RetryPolicyProvider.Policy = new RetryPolicy {
+         new RetryBehavior<InvalidOperationException> { MaxRetries = 3, InitialDelay = TimeSpan.FromSeconds(2) }
+      };
+
+      var parameters = new TestJob.Parameters {
+         FailuresBeforeSuccess = 1,
+         RetryableException = new InvalidOperationException("transient")
+      };
+
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+
+      // Act - a 2s delay never becomes due against the frozen TestClock within the test.
+      await RunUntilRetriesScheduledAsync(parameters);
+
+      // Assert
+      parameters.RetryContexts.Should().ContainSingle();
+      parameters.RetryContexts[0].NextAttemptAtUtc.Should().Be(_harness.Clock.UtcNow + TimeSpan.FromSeconds(2));
+   }
+
+   [Fact]
+   public async Task RetryAfterThrows_RoutesThroughNormalFailurePath_WithOriginalExecutionException()
+   {
+      // Arrange
+      var executionException = new InvalidOperationException("transient");
+
+      _harness.RetryPolicyProvider.Policy = new RetryPolicy {
+         new RetryBehavior<InvalidOperationException> {
+            MaxRetries = 3,
+            InitialDelay = TimeSpan.Zero,
+            RetryAfter = (_, _) => throw new FormatException("boom from RetryAfter's delay-parsing logic")
+         }
+      };
+
+      var parameters = new TestJob.Parameters {
+         FailuresBeforeSuccess = 1,
+         RetryableException = executionException
+      };
+
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+
+      // Act
+      await _harness.RunAndDrainAsync(CancellationToken);
+
+      // Assert - the chain fails, with the original execution exception, rather than an unhandled exception
+      // escaping the runner's fire-and-forget background task.
+      parameters.Crashed.Should().BeTrue();
+      parameters.FailedWithException.Should().BeSameAs(executionException);
+      parameters.RetryContexts.Should().BeEmpty("the retry never gets scheduled - the delay computation itself failed");
+      parameters.HookCallOrder.Should().Equal("OnJobFailedAsync");
+
+      _harness.Storage.ScheduledJobs.Should().BeEmpty();
+      _harness.Storage.InProgressJobs.Should().BeEmpty();
+   }
+
+   [Fact]
+   public async Task RetryAfterReturnsNegativeTimeSpan_SameFailurePathAsThrowing()
+   {
+      // Arrange
+      var executionException = new InvalidOperationException("transient");
+
+      _harness.RetryPolicyProvider.Policy = new RetryPolicy {
+         new RetryBehavior<InvalidOperationException> {
+            MaxRetries = 3,
+            InitialDelay = TimeSpan.Zero,
+            RetryAfter = (_, _) => TimeSpan.FromSeconds(-1)
+         }
+      };
+
+      var parameters = new TestJob.Parameters {
+         FailuresBeforeSuccess = 1,
+         RetryableException = executionException
+      };
+
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+
+      // Act
+      await _harness.RunAndDrainAsync(CancellationToken);
+
+      // Assert
+      parameters.Crashed.Should().BeTrue();
+      parameters.FailedWithException.Should().BeSameAs(executionException);
+      parameters.RetryContexts.Should().BeEmpty();
+      parameters.HookCallOrder.Should().Equal("OnJobFailedAsync");
+
+      _harness.Storage.ScheduledJobs.Should().BeEmpty();
+      _harness.Storage.InProgressJobs.Should().BeEmpty();
+   }
+
+   [Fact]
+   public async Task MultipleRetryBehaviors_RetryAfterAppliesOnlyToTheBehaviorThatSetsIt()
+   {
+      // Arrange
+      var overrideDelay = TimeSpan.FromMinutes(10);
+
+      _harness.RetryPolicyProvider.Policy = new RetryPolicy {
+         new RetryBehavior<TimeoutException> { MaxRetries = 2, InitialDelay = TimeSpan.FromSeconds(2) },
+         new RetryBehavior<InvalidOperationException> {
+            MaxRetries = 2,
+            InitialDelay = TimeSpan.FromSeconds(1),
+            RetryAfter = (_, _) => overrideDelay
+         }
+      };
+
+      var backoffParameters = new TestJob.Parameters {
+         FailuresBeforeSuccess = 1,
+         RetryableException = new TimeoutException("no override for this behavior")
+      };
+      var overrideParameters = new TestJob.Parameters {
+         FailuresBeforeSuccess = 1,
+         RetryableException = new InvalidOperationException("this behavior has an override")
+      };
+
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(backoffParameters, CancellationToken);
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(overrideParameters, CancellationToken);
+
+      // Act - neither delay ever becomes due against the frozen TestClock within the test.
+      await RunUntilRetriesScheduledAsync(backoffParameters, overrideParameters);
+
+      // Assert
+      backoffParameters.RetryContexts.Should().ContainSingle();
+      backoffParameters.RetryContexts[0].NextAttemptAtUtc.Should().Be(_harness.Clock.UtcNow + TimeSpan.FromSeconds(2), "this behavior never set RetryAfter");
+
+      overrideParameters.RetryContexts.Should().ContainSingle();
+      overrideParameters.RetryContexts[0].NextAttemptAtUtc.Should().Be(_harness.Clock.UtcNow + overrideDelay, "this behavior's RetryAfter must be honored independently of the other behavior in the same policy");
+   }
+
+   /// <summary>
+   /// Drives the runner directly and stops it once every given job has recorded a retry, rather than draining
+   /// (which would wait for the retry to actually execute) - some of the delays under test are large enough, or the
+   /// TestClock frozen enough, that the retry would never become due within the test otherwise.
+   /// </summary>
+   private async Task RunUntilRetriesScheduledAsync(params TestJob.Parameters[] parameters)
+   {
+      await _harness.Runner.StartAsync(CancellationToken);
+      await WaitUntilAsync(() => parameters.All(p => p.RetryContexts.Count > 0), CancellationToken);
+      await _harness.Runner.StopAsync(CancellationToken);
+   }
+
    private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken ct)
    {
       while (!condition())

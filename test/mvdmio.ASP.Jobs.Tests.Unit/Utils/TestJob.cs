@@ -43,6 +43,7 @@ public class TestJob : Job<TestJob.Parameters>
    public override Task OnJobFailedAsync(Parameters parameters, Exception exception, CancellationToken cancellationToken)
    {
       parameters.Crashed = true;
+      parameters.FailedWithException = exception;
       parameters.HookCallOrder.Add(nameof(OnJobFailedAsync));
 
       if (parameters.ThrowInOnJobFailedAsync is not null)
@@ -77,6 +78,9 @@ public class TestJob : Job<TestJob.Parameters>
 
       public bool Executed { get; set; }
       public bool Crashed { get; set; }
+
+      /// <summary>The exception instance passed to <see cref="OnJobFailedAsync"/>, captured for tests that must confirm which exception surfaced.</summary>
+      public Exception? FailedWithException { get; set; }
 
       /// <summary>When set, thrown from OnJobExecutedAsync/OnJobFailedAsync/OnJobRetryAsync after recording state, to verify these hooks are fire-safe observers.</summary>
       public Exception? ThrowInOnJobExecutedAsync { get; set; }

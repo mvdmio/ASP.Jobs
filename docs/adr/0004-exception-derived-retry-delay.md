@@ -1,0 +1,23 @@
+# Exception-derived retry delay (`RetryAfter`)
+
+**Status:** accepted
+
+`RetryBehavior<TException>` gains an optional `RetryAfter` function (`Func<TException, int, TimeSpan?>`) invoked with the matched exception and the upcoming attempt number. A non-null result **is** the delay for that attempt — used verbatim, bypassing `MaxDelay` — because it exists specifically so a Job can honor a failure that is more authoritative about timing than any pre-declared backoff curve (a rate-limited HTTP API's `Retry-After` header, "retry in 4 hours" from a downstream API). Returning `null`, or leaving `RetryAfter` unset, falls back to the existing `InitialDelay`/`BackoffFactor`/`MaxDelay` computation unchanged.
+
+## Context
+
+Today `ComputeDelay` always derives the next-attempt delay from `InitialDelay`/`BackoffFactor`/`MaxDelay` — a fixed guess regardless of what the exception actually says. Some exceptions carry an authoritative wait duration; there was no way for a `RetryBehavior` to read it.
+
+## Considered options
+
+- **`RetryAfter` lives on `RetryBehavior<TException>`, not `RetryPolicy` (chosen).** This is where the exception's concrete type is already known (via the generic parameter) and where `ComputeDelay` already lives. A hypothetical `RetryPolicy`-level hook would only ever see the base `Exception` type, forcing consumers to cast.
+- **`RetryAfter` bypasses `MaxDelay` entirely (chosen).** `MaxDelay` is a self-imposed safety rail on the library's own backoff *guess*. A `RetryAfter` result is not a guess — it is data taken directly from the failure. Clamping it to a cap the consumer set for an unrelated computation would silently ignore a rate limiter's own instructions and risk being rate-limited again immediately. Rejected clamping `RetryAfter` to `MaxDelay` like the backoff path: it would make `RetryAfter` strictly worse than useless for its primary use case (a `Retry-After` value that legitimately exceeds a cap chosen for exponential backoff).
+- **A throw from `RetryAfter`, or a negative returned `TimeSpan`, surfaces as a chain failure rather than being swallowed into "no override" (chosen).** Silently falling back to backoff on a broken `RetryAfter` implementation would mask bugs in delay-parsing logic behind normal-looking retries. Consistent with the repo-wide rule of never swallowing exceptions silently.
+- **The delay computation is wrapped so that failure routes through the normal job-failure path, not left to propagate raw (chosen).** The call to `ComputeDelay` in the runner's retry-scheduling path sits after the job's own failure-handling `try`/`catch` has already closed — retry eligibility was already confirmed. A bare propagation from that exact call site would surface as an unhandled exception on the runner's per-job fire-and-forget background task: a new and more dangerous failure mode than "the job failed." Mirrors the existing precedent in `JobRunnerService` where Captured Culture resolution is deliberately placed inside the job's `try` block specifically so an unresolvable culture rides the normal failure path instead of being lost on that same fire-and-forget task (see ADR 0002). Here, `OnJobFailedAsync` is invoked with the *original execution exception* (the one that made the job eligible for retry in the first place), not the exception `RetryAfter` threw — the failure is "this Execution Chain could not be retried," not a new, unrelated exception type the consumer never declared a behavior for.
+- **Additive only: one new nullable init-only property, default `null` (chosen).** Every existing `RetryBehavior<TException>` declaration keeps compiling and behaving exactly as before. No `RetryPolicy` changes, no storage/schema changes — Retry Policies are never persisted (ADR 0003), so `RetryAfter` never needs to be serializable.
+
+## Consequences
+
+- `RetryBehavior<TException>.ComputeDelay` bypasses `MaxDelay` whenever `RetryAfter` is set and returns non-null. This will look like a bug to a future maintainer ("why doesn't the cap apply here?") unless documented at the point of definition — it is, in `RetryAfter`'s XML doc comment.
+- A broken `RetryAfter` (throws, or returns a negative `TimeSpan`) ends the Execution Chain in failure via the normal path (logged, `OnJobFailedAsync` invoked, chain finalized) instead of granting the retry — the same outcome as the retry budget being depleted, from the consumer's perspective.
+- No new top-level domain glossary term: `RetryAfter` is a mechanism within what the existing "Retry Policy" entry in `CONTEXT.md` already covers ("how" a Job decides retry timing), not a new concept - so that entry is intentionally left unchanged by this feature.

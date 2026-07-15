@@ -286,7 +286,34 @@ internal sealed class JobRunnerService : BackgroundService
    private async Task RetryJobAsync(JobStoreItem jobBusItem, IJob job, Exception exception, RetryBehavior matchedBehavior, Activity? activity, CancellationToken cancellationToken)
    {
       var nextAttempt = jobBusItem.Attempt + 1;
-      var nextAttemptAtUtc = _clock.UtcNow + matchedBehavior.ComputeDelay(nextAttempt);
+      TimeSpan delay;
+
+      try
+      {
+         // A user-supplied RetryBehavior<TException>.RetryAfter runs here. Computing the delay is deliberately
+         // wrapped so a throw (or an invalid negative result) routes through the normal job-failure path - logged,
+         // OnJobFailedAsync invoked with the original execution exception, chain finalized - instead of escaping as
+         // an unhandled exception on this runner's fire-and-forget background task.
+         delay = matchedBehavior.ComputeDelay(exception, nextAttempt);
+      }
+      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      {
+         // Ignore cancellation exceptions; they are expected when the service is stopped.
+         return;
+      }
+      catch (Exception ex)
+      {
+         _logger.LogError(ex, "Error while computing the retry delay for job {JobType}; failing the chain instead", jobBusItem.JobType.Name);
+
+         activity?.AddException(ex);
+         activity?.SetStatus(ActivityStatusCode.Error, "Retry delay computation failed");
+
+         await InvokeHookSafelyAsync(() => job.OnJobFailedAsync(jobBusItem.Parameters, exception, cancellationToken), nameof(IJob.OnJobFailedAsync), jobBusItem.JobType);
+         await FinalizeChainAsync(jobBusItem, cancellationToken);
+         return;
+      }
+
+      var nextAttemptAtUtc = _clock.UtcNow + delay;
 
       try
       {

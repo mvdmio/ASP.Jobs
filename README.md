@@ -161,6 +161,13 @@ public class MyJob : Job<MyJobParameters>
         new RetryBehavior<TimeoutException> {
             MaxRetries = 3,
             InitialDelay = TimeSpan.FromSeconds(30) // fixed 30s delay between attempts
+        },
+        new RetryBehavior<RateLimitException> {
+            MaxRetries = 5,
+            InitialDelay = TimeSpan.FromSeconds(1),
+            BackoffFactor = 2.0,
+            MaxDelay = TimeSpan.FromMinutes(1),
+            RetryAfter = (ex, attempt) => ex.RetryAfterHeader // TimeSpan? - null falls back to the backoff above
         }
     ];
 
@@ -188,6 +195,14 @@ failure. The delay before retry *n* is `InitialDelay * BackoffFactor^(n-1)`, cap
 
 **`OnJobFailedAsync` only fires once the Execution Chain definitively fails** - the retry budget is depleted, or the
 exception doesn't match any declared behavior. It never fires for an attempt that is going to be retried.
+
+**`RetryAfter`** lets a behavior read the delay directly out of the matched exception instead of always computing it
+from `InitialDelay`/`BackoffFactor` - useful when the failure itself is authoritative about timing (e.g. a
+rate-limited API's `Retry-After` header). It receives the exception (strongly typed) and the upcoming attempt number,
+and returns `TimeSpan?`: a non-null result is used verbatim as the delay - **bypassing `MaxDelay` entirely** - and
+`null` falls back to the normal backoff computation above. A `RetryAfter` that throws, or returns a negative
+`TimeSpan`, fails the Execution Chain through the normal failure path (`OnJobFailedAsync`, with the original execution
+exception) rather than being silently treated as "no override".
 
 **Idempotency obligation:** because a retry re-executes the same job with the same parameters, `ExecuteAsync` must be
 safe to run more than once for the same logical unit of work. There is no jitter in v1, so jobs that fail

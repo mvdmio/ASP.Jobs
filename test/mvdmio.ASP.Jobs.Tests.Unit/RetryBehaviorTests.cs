@@ -81,9 +81,9 @@ public class RetryBehaviorTests
    {
       RetryBehavior behavior = new RetryBehavior<Exception> { MaxRetries = 5, InitialDelay = TimeSpan.FromSeconds(1) };
 
-      behavior.ComputeDelay(1).Should().Be(TimeSpan.FromSeconds(1));
-      behavior.ComputeDelay(2).Should().Be(TimeSpan.FromSeconds(1));
-      behavior.ComputeDelay(3).Should().Be(TimeSpan.FromSeconds(1));
+      behavior.ComputeDelay(new Exception(), 1).Should().Be(TimeSpan.FromSeconds(1));
+      behavior.ComputeDelay(new Exception(), 2).Should().Be(TimeSpan.FromSeconds(1));
+      behavior.ComputeDelay(new Exception(), 3).Should().Be(TimeSpan.FromSeconds(1));
    }
 
    [Fact]
@@ -95,9 +95,9 @@ public class RetryBehaviorTests
          BackoffFactor = 2.0
       };
 
-      behavior.ComputeDelay(1).Should().Be(TimeSpan.FromSeconds(1));
-      behavior.ComputeDelay(2).Should().Be(TimeSpan.FromSeconds(2));
-      behavior.ComputeDelay(3).Should().Be(TimeSpan.FromSeconds(4));
+      behavior.ComputeDelay(new Exception(), 1).Should().Be(TimeSpan.FromSeconds(1));
+      behavior.ComputeDelay(new Exception(), 2).Should().Be(TimeSpan.FromSeconds(2));
+      behavior.ComputeDelay(new Exception(), 3).Should().Be(TimeSpan.FromSeconds(4));
    }
 
    [Fact]
@@ -110,10 +110,10 @@ public class RetryBehaviorTests
          MaxDelay = TimeSpan.FromSeconds(3)
       };
 
-      behavior.ComputeDelay(1).Should().Be(TimeSpan.FromSeconds(1));
-      behavior.ComputeDelay(2).Should().Be(TimeSpan.FromSeconds(2));
-      behavior.ComputeDelay(3).Should().Be(TimeSpan.FromSeconds(3)); // would be 4s uncapped
-      behavior.ComputeDelay(4).Should().Be(TimeSpan.FromSeconds(3)); // would be 8s uncapped
+      behavior.ComputeDelay(new Exception(), 1).Should().Be(TimeSpan.FromSeconds(1));
+      behavior.ComputeDelay(new Exception(), 2).Should().Be(TimeSpan.FromSeconds(2));
+      behavior.ComputeDelay(new Exception(), 3).Should().Be(TimeSpan.FromSeconds(3)); // would be 4s uncapped
+      behavior.ComputeDelay(new Exception(), 4).Should().Be(TimeSpan.FromSeconds(3)); // would be 8s uncapped
    }
 
    [Fact]
