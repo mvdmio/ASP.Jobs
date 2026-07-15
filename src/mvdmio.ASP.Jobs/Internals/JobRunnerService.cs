@@ -294,7 +294,7 @@ internal sealed class JobRunnerService : BackgroundService
 
          if (scheduled)
          {
-            // Supersession is silent (no hooks fire) per ADR 0002, so OnJobRetryAsync only fires once the retry
+            // Supersession is silent (no hooks fire) per ADR 0003, so OnJobRetryAsync only fires once the retry
             // is confirmed written - a superseded chain never had a "retried attempt" in the first place.
             var retryContext = new RetryContext {
                Attempt = nextAttempt,
