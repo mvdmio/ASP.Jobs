@@ -12,6 +12,7 @@ using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Utils;
 using mvdmio.Database.PgSQL;
 using mvdmio.Database.PgSQL.Dapper.QueryParameters;
+using mvdmio.Database.PgSQL.Exceptions;
 using mvdmio.Database.PgSQL.Migrations;
 using Npgsql;
 using NpgsqlTypes;
@@ -234,10 +235,11 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
          return true;
       }
-      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+      catch (QueryException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg)
       {
          // A same-name job was inserted concurrently between our NOT EXISTS check and the UPDATE commit - treat as supersession.
-         await SupersedeRetryAsync(job, "a concurrently-scheduled job of the same name", ex, ct);
+         // Db.Dapper wraps the driver exception in a QueryException, so the PostgresException is unwrapped from InnerException.
+         await SupersedeRetryAsync(job, "a concurrently-scheduled job of the same name", pg, ct);
          return false;
       }
    }

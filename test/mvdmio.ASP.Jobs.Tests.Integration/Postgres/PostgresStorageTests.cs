@@ -5,6 +5,8 @@ using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using mvdmio.Database.PgSQL;
+using mvdmio.Database.PgSQL.Dapper.QueryParameters;
+using NpgsqlTypes;
 using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Integration.Postgres;
@@ -255,7 +257,7 @@ public sealed class PostgresStorageTests : IAsyncLifetime
          new Dictionary<string, object?> {
             { "id", Guid.NewGuid() },
             { "job_type", typeof(object).AssemblyQualifiedName },
-            { "parameters_json", "{}" },
+            { "parameters_json", new TypedQueryParameter("{}", NpgsqlDbType.Jsonb) },
             { "parameters_type", typeof(object).AssemblyQualifiedName },
             { "application_name", _harness.Configuration.ApplicationName },
             { "job_name", "LegacyRow" },
