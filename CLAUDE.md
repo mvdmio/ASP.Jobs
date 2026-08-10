@@ -20,22 +20,22 @@ Job scheduling library for ASP.NET Core — schedule and run background jobs wit
 
 Read the relevant file before working in that area:
 
-- [Architecture & layout](.agents/ref/architecture.md) — project structure, job lifecycle, storage, key files & features
-- [Coding conventions](.agents/ref/conventions.md) — naming, visibility, async, code style
-- [Testing](.agents/ref/testing.md) — unit & integration patterns, test utilities
-- [Common tasks](.agents/ref/common-tasks.md) — adding a job, a migration, or a storage backend
-- [Dependencies & CI/CD](.agents/ref/dependencies.md) — package list and publish pipeline
+- [Architecture & layout](.agents/refs/architecture.md) — project structure, job lifecycle, storage, key files & features
+- [Coding conventions](.agents/refs/conventions.md) — naming, visibility, async, code style
+- [Testing](.agents/refs/testing.md) — unit & integration patterns, test utilities
+- [Common tasks](.agents/refs/common-tasks.md) — adding a job, a migration, or a storage backend
+- [Dependencies & CI/CD](.agents/refs/dependencies.md) — package list and publish pipeline
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues live as markdown files under `.agents/<feature>/`. See `.agents/ref/issue-tracker.md`.
+Specs and issues live as markdown under `.agents/specs/` and `.agents/issues/`. See `.agents/refs/issue-tracker.md`.
 
 ### Triage labels
 
-Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `.agents/ref/triage-labels.md`.
+Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `.agents/refs/triage-labels.md`.
 
 ### Domain docs
 
-Single-context (`CONTEXT.md` + `docs/adr/` at the repo root). See `.agents/ref/domain.md`.
+Single-context (`CONTEXT.md` + `docs/adr/` at the repo root). See `.agents/refs/domain.md`.
