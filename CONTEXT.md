@@ -24,6 +24,10 @@ _Avoid_: initialization, startup
 A single running process that may schedule and/or execute jobs. Identified by `InstanceId`. Many Worker Instances can share one database.
 _Avoid_: node, server, client
 
+**Claim**:
+Exclusive ownership of a due job by one Worker Instance for execution. Other Worker Instances will not run a job while it is Claimed.
+_Avoid_: lock, lease, checkout
+
 ### Culture
 
 **Captured Culture**:
