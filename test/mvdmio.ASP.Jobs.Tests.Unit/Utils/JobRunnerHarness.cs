@@ -25,7 +25,6 @@ internal sealed class JobRunnerHarness
       Storage = new InMemoryJobStorage(Clock);
 
       var services = new JobTestServices().Services;
-      services.RegisterJob<CultureRecordingJob>();
       services.RegisterJob<CultureChildSchedulingJob>();
       services.AddSingleton<IJobStorage>(Storage);
       // Register IJobScheduler so jobs that schedule further jobs (e.g. CultureChildSchedulingJob) can resolve it.

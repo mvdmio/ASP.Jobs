@@ -94,7 +94,7 @@ internal sealed class InMemoryJobStorage : IJobStorage
             {
                // Find the next job that is ready to be processed
                var job = _scheduledJobs.Values
-                  .Where(x => x.PerformAt <= now && (x.Options.Group is null || !GroupsInProgress.Contains(x.Options.Group!)))
+                  .Where(x => IsDueAndClaimable(x, now))
                   .OrderBy(x => x.PerformAt)
                   .FirstOrDefault();
 
@@ -209,6 +209,11 @@ internal sealed class InMemoryJobStorage : IJobStorage
       }
    }
 
+   private bool IsDueAndClaimable(JobStoreItem job, DateTime now)
+   {
+      return job.PerformAt <= now && (job.Options.Group is null || !GroupsInProgress.Contains(job.Options.Group!));
+   }
+
    private void SendWakeSignal()
    {
       _wakeWaiters.TrySetResult(null);
@@ -229,9 +234,7 @@ internal sealed class InMemoryJobStorage : IJobStorage
          // the producer parks forever.
          currentWake = _wakeWaiters;
 
-         var dueClaimableExists = _scheduledJobs.Values.Any(x =>
-            x.PerformAt <= now && (x.Options.Group is null || !GroupsInProgress.Contains(x.Options.Group!)));
-         if (dueClaimableExists)
+         if (_scheduledJobs.Values.Any(x => IsDueAndClaimable(x, now)))
             return;
 
          var candidates = _scheduledJobs.Values.Where(x => x.PerformAt > now).ToList();

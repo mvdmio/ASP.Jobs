@@ -16,145 +16,101 @@ public sealed class JobCulturePropagationTests
    public async Task ExplicitCulture_IsReappliedDuringExecution()
    {
       // Arrange
-      var parameters = new CultureRecordingJob.Parameters();
+      var parameters = new TestJob.Parameters();
 
       // Act
-      await _harness.Scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(parameters, new CultureInfo("nl-NL"), CancellationToken);
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, new CultureInfo("nl-NL"), CancellationToken);
       await _harness.RunAndDrainAsync(CancellationToken);
 
       // Assert - the explicit culture is applied to both the formatting and UI culture.
       parameters.Executed.Should().BeTrue();
-      parameters.ObservedCulture.Should().Be("nl-NL");
-      parameters.ObservedUICulture.Should().Be("nl-NL");
+      parameters.Execute.Should().Be(new ObservedCulture("nl-NL", "nl-NL"));
    }
 
    [Fact]
    public async Task AmbientCulture_IsCapturedIndependentlyAndReapplied()
    {
-      var originalCulture = CultureInfo.CurrentCulture;
-      var originalUICulture = CultureInfo.CurrentUICulture;
-      try
-      {
-         // Arrange - a request-like thread where formatting culture and UI culture differ.
-         CultureInfo.CurrentCulture = new CultureInfo("nl-NL");
-         CultureInfo.CurrentUICulture = new CultureInfo("de-DE");
+      using var _ = new ThreadCultureScope("nl-NL", "de-DE");
 
-         var parameters = new CultureRecordingJob.Parameters();
-         await _harness.Scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(parameters, CancellationToken);
+      var parameters = new TestJob.Parameters();
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
 
-         // The scheduling thread's culture changes before the job runs; the job must still run under what was captured.
-         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
-         CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+      // The scheduling thread's culture changes before the job runs; the job must still run under what was captured.
+      CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+      CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
 
-         // Act
-         await _harness.RunAndDrainAsync(CancellationToken);
+      await _harness.RunAndDrainAsync(CancellationToken);
 
-         // Assert - both ambient values captured independently.
-         parameters.ObservedCulture.Should().Be("nl-NL");
-         parameters.ObservedUICulture.Should().Be("de-DE");
-      }
-      finally
-      {
-         CultureInfo.CurrentCulture = originalCulture;
-         CultureInfo.CurrentUICulture = originalUICulture;
-      }
+      parameters.Execute.Should().Be(new ObservedCulture("nl-NL", "de-DE"));
    }
 
    [Fact]
    public async Task PerformAt_AmbientCulture_IsCapturedAndReapplied()
    {
-      var originalCulture = CultureInfo.CurrentCulture;
-      var originalUICulture = CultureInfo.CurrentUICulture;
-      try
-      {
-         CultureInfo.CurrentCulture = new CultureInfo("fr-FR");
-         CultureInfo.CurrentUICulture = new CultureInfo("it-IT");
+      using var _ = new ThreadCultureScope("fr-FR", "it-IT");
 
-         var parameters = new CultureRecordingJob.Parameters();
-         await _harness.Scheduler.PerformAtAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(_harness.Clock.UtcNow, parameters, CancellationToken);
+      var parameters = new TestJob.Parameters();
+      await _harness.Scheduler.PerformAtAsync<TestJob, TestJob.Parameters>(_harness.Clock.UtcNow, parameters, CancellationToken);
 
-         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
-         CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+      CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+      CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
 
-         await _harness.RunAndDrainAsync(CancellationToken);
+      await _harness.RunAndDrainAsync(CancellationToken);
 
-         parameters.ObservedCulture.Should().Be("fr-FR");
-         parameters.ObservedUICulture.Should().Be("it-IT");
-      }
-      finally
-      {
-         CultureInfo.CurrentCulture = originalCulture;
-         CultureInfo.CurrentUICulture = originalUICulture;
-      }
+      parameters.Execute.Should().Be(new ObservedCulture("fr-FR", "it-IT"));
    }
 
    [Fact]
    public async Task PerformAt_ExplicitCulture_IsReappliedDuringExecution()
    {
-      var parameters = new CultureRecordingJob.Parameters();
+      var parameters = new TestJob.Parameters();
 
-      await _harness.Scheduler.PerformAtAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(
+      await _harness.Scheduler.PerformAtAsync<TestJob, TestJob.Parameters>(
          _harness.Clock.UtcNow, parameters, new CultureInfo("sv-SE"), CancellationToken);
       await _harness.RunAndDrainAsync(CancellationToken);
 
-      parameters.ObservedCulture.Should().Be("sv-SE");
-      parameters.ObservedUICulture.Should().Be("sv-SE");
+      parameters.Execute.Should().Be(new ObservedCulture("sv-SE", "sv-SE"));
    }
 
    [Fact]
    public async Task PerformAsap_BatchWithExplicitCulture_RunsEveryItemUnderThatCulture()
    {
-      var batch = new[] { new CultureRecordingJob.Parameters(), new CultureRecordingJob.Parameters() };
+      var batch = new[] { new TestJob.Parameters(), new TestJob.Parameters() };
 
-      await _harness.Scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(batch, new CultureInfo("nl-NL"), CancellationToken);
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(batch, new CultureInfo("nl-NL"), CancellationToken);
       await _harness.RunAndDrainAsync(CancellationToken);
 
       foreach (var parameters in batch)
       {
          parameters.Executed.Should().BeTrue();
-         parameters.ObservedCulture.Should().Be("nl-NL");
-         parameters.ObservedUICulture.Should().Be("nl-NL");
+         parameters.Execute.Should().Be(new ObservedCulture("nl-NL", "nl-NL"));
       }
    }
 
    [Fact]
    public async Task PerformAsap_DefaultBatch_CapturesThreadCultureOnceForWholeBatch()
    {
-      var originalCulture = CultureInfo.CurrentCulture;
-      var originalUICulture = CultureInfo.CurrentUICulture;
-      try
-      {
-         CultureInfo.CurrentCulture = new CultureInfo("nl-NL");
-         CultureInfo.CurrentUICulture = new CultureInfo("de-DE");
+      using var _ = new ThreadCultureScope("nl-NL", "de-DE");
 
-         var batch = new[] { new CultureRecordingJob.Parameters(), new CultureRecordingJob.Parameters() };
-         await _harness.Scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(batch, CancellationToken);
+      var batch = new[] { new TestJob.Parameters(), new TestJob.Parameters() };
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(batch, CancellationToken);
 
-         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
-         CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+      CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+      CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
 
-         await _harness.RunAndDrainAsync(CancellationToken);
+      await _harness.RunAndDrainAsync(CancellationToken);
 
-         foreach (var parameters in batch)
-         {
-            parameters.ObservedCulture.Should().Be("nl-NL");
-            parameters.ObservedUICulture.Should().Be("de-DE");
-         }
-      }
-      finally
-      {
-         CultureInfo.CurrentCulture = originalCulture;
-         CultureInfo.CurrentUICulture = originalUICulture;
-      }
+      foreach (var parameters in batch)
+         parameters.Execute.Should().Be(new ObservedCulture("nl-NL", "de-DE"));
    }
 
    [Fact]
    public async Task OptionsCarryingOverload_AcceptsExplicitCultureWithJobName()
    {
-      var parameters = new CultureRecordingJob.Parameters();
+      var parameters = new TestJob.Parameters();
       var options = new JobScheduleOptions { JobName = "culture-options-job", Group = "culture-group" };
 
-      await _harness.Scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(
          parameters, options, new CultureInfo("ja-JP"), CancellationToken);
 
       var stored = _harness.Storage.ScheduledJobs.Single();
@@ -165,8 +121,7 @@ public sealed class JobCulturePropagationTests
 
       await _harness.RunAndDrainAsync(CancellationToken);
 
-      parameters.ObservedCulture.Should().Be("ja-JP");
-      parameters.ObservedUICulture.Should().Be("ja-JP");
+      parameters.Execute.Should().Be(new ObservedCulture("ja-JP", "ja-JP"));
    }
 
    [Fact]
@@ -181,8 +136,7 @@ public sealed class JobCulturePropagationTests
 
       // Assert - the child captured the parent's reapplied culture automatically.
       parameters.Child.Executed.Should().BeTrue();
-      parameters.Child.ObservedCulture.Should().Be("nl-NL");
-      parameters.Child.ObservedUICulture.Should().Be("nl-NL");
+      parameters.Child.Execute.Should().Be(new ObservedCulture("nl-NL", "nl-NL"));
    }
 
    [Fact]
@@ -190,10 +144,10 @@ public sealed class JobCulturePropagationTests
    {
       // Arrange - bypass the scheduler (which only ever captures valid culture names) and store a job with an
       // unresolvable culture name directly. A name longer than the max locale-name length always throws.
-      var parameters = new CultureRecordingJob.Parameters();
+      var parameters = new TestJob.Parameters();
       await _harness.Storage.ScheduleJobAsync(
          new JobStoreItem {
-            JobType = typeof(CultureRecordingJob),
+            JobType = typeof(TestJob),
             Parameters = parameters,
             Options = new JobScheduleOptions(),
             PerformAt = _harness.Clock.UtcNow,
@@ -207,36 +161,37 @@ public sealed class JobCulturePropagationTests
       await _harness.RunAndDrainAsync(CancellationToken);
 
       // Assert - the failure surfaced through the normal job-failure path; ExecuteAsync never ran.
-      parameters.Failed.Should().BeTrue();
+      parameters.Crashed.Should().BeTrue();
       parameters.Executed.Should().BeFalse();
    }
 
    [Fact]
    public async Task ExecutionTimeHooks_ObserveCapturedCulture()
    {
-      var succeeded = new CultureRecordingJob.Parameters();
-      await _harness.Scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(
+      _harness.RetryPolicyProvider.Policy = new RetryPolicy {
+         new RetryBehavior<InvalidOperationException> { MaxRetries = 3, InitialDelay = TimeSpan.Zero }
+      };
+
+      var succeeded = new TestJob.Parameters();
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(
          succeeded, new CultureInfo("nl-NL"), CancellationToken);
 
-      var failed = new CultureRecordingJob.Parameters { ThrowOnExecute = new ArgumentException("boom") };
-      await _harness.Scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(
+      var failed = new TestJob.Parameters { ThrowOnExecute = new ArgumentException("boom") };
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(
          failed, new CultureInfo("de-DE"), CancellationToken);
 
-      var retried = new CultureRecordingJob.Parameters { FailuresBeforeSuccess = 1 };
-      await _harness.Scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(
+      var retried = new TestJob.Parameters { FailuresBeforeSuccess = 1 };
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(
          retried, new CultureInfo("fr-FR"), CancellationToken);
 
       await _harness.RunAndDrainAsync(CancellationToken);
 
-      succeeded.ExecutedHookCulture.Should().Be("nl-NL");
-      succeeded.ExecutedHookUICulture.Should().Be("nl-NL");
+      succeeded.ExecutedHook.Should().Be(new ObservedCulture("nl-NL", "nl-NL"));
 
-      failed.Failed.Should().BeTrue();
-      failed.FailedHookCulture.Should().Be("de-DE");
-      failed.FailedHookUICulture.Should().Be("de-DE");
+      failed.Crashed.Should().BeTrue();
+      failed.FailedHook.Should().Be(new ObservedCulture("de-DE", "de-DE"));
 
-      retried.RetryHookCulture.Should().Be("fr-FR");
-      retried.RetryHookUICulture.Should().Be("fr-FR");
+      retried.RetryHook.Should().Be(new ObservedCulture("fr-FR", "fr-FR"));
       retried.Executed.Should().BeTrue();
    }
 
@@ -244,7 +199,7 @@ public sealed class JobCulturePropagationTests
    public async Task PerformCron_WithoutCulture_CapturesInvariant()
    {
       // Act
-      await _harness.Scheduler.PerformCronAsync<CultureRecordingJob, CultureRecordingJob.Parameters>("0 0 * * *", new CultureRecordingJob.Parameters(), runImmediately: false, CancellationToken);
+      await _harness.Scheduler.PerformCronAsync<TestJob, TestJob.Parameters>("0 0 * * *", new TestJob.Parameters(), runImmediately: false, CancellationToken);
 
       // Assert - CRON defaults to the invariant culture (empty-string name), not the scheduling thread's culture.
       var stored = _harness.Storage.ScheduledJobs.Single();
@@ -256,7 +211,7 @@ public sealed class JobCulturePropagationTests
    public async Task PerformCron_WithCulture_CapturesThatCulture()
    {
       // Act
-      await _harness.Scheduler.PerformCronAsync<CultureRecordingJob, CultureRecordingJob.Parameters>("0 0 * * *", new CultureRecordingJob.Parameters(), new CultureInfo("nl-NL"), runImmediately: false, CancellationToken);
+      await _harness.Scheduler.PerformCronAsync<TestJob, TestJob.Parameters>("0 0 * * *", new TestJob.Parameters(), new CultureInfo("nl-NL"), runImmediately: false, CancellationToken);
 
       // Assert
       var stored = _harness.Storage.ScheduledJobs.Single();
@@ -271,10 +226,10 @@ public sealed class JobCulturePropagationTests
       // the second (stored directly) carries none. A leak would show up as the second job observing the first's culture.
       var harness = new JobRunnerHarness(maxConcurrentJobs: 1);
 
-      var withCulture = new CultureRecordingJob.Parameters();
+      var withCulture = new TestJob.Parameters();
       await harness.Storage.ScheduleJobAsync(
          new JobStoreItem {
-            JobType = typeof(CultureRecordingJob),
+            JobType = typeof(TestJob),
             Parameters = withCulture,
             Options = new JobScheduleOptions(),
             PerformAt = harness.Clock.UtcNow,
@@ -284,10 +239,10 @@ public sealed class JobCulturePropagationTests
          CancellationToken
       );
 
-      var withoutCulture = new CultureRecordingJob.Parameters();
+      var withoutCulture = new TestJob.Parameters();
       await harness.Storage.ScheduleJobAsync(
          new JobStoreItem {
-            JobType = typeof(CultureRecordingJob),
+            JobType = typeof(TestJob),
             Parameters = withoutCulture,
             Options = new JobScheduleOptions(),
             PerformAt = harness.Clock.UtcNow,
@@ -301,10 +256,10 @@ public sealed class JobCulturePropagationTests
       await harness.RunAndDrainAsync(CancellationToken);
 
       // Assert - the no-culture job ran under the thread's ambient culture, not the previous job's Captured Culture.
-      withCulture.ObservedCulture.Should().Be("ja-JP");
+      withCulture.Execute.Should().Be(new ObservedCulture("ja-JP", "ja-JP"));
       withoutCulture.Executed.Should().BeTrue();
-      withoutCulture.ObservedCulture.Should().NotBe("ja-JP");
-      withoutCulture.ObservedUICulture.Should().NotBe("ja-JP");
+      withoutCulture.Execute!.Value.Culture.Should().NotBe("ja-JP");
+      withoutCulture.Execute.Value.UICulture.Should().NotBe("ja-JP");
    }
 
    [Fact]
@@ -312,8 +267,8 @@ public sealed class JobCulturePropagationTests
    {
       // Arrange - a cron job that runs immediately, so the runner schedules the next occurrence in its finally.
       var harness = new JobRunnerHarness(maxConcurrentJobs: 1);
-      await harness.Scheduler.PerformCronAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(
-         "0 0 * * *", new CultureRecordingJob.Parameters(), new CultureInfo("ja-JP"), runImmediately: true, CancellationToken);
+      await harness.Scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(
+         "0 0 * * *", new TestJob.Parameters(), new CultureInfo("ja-JP"), runImmediately: true, CancellationToken);
 
       await harness.Runner.StartAsync(CancellationToken);
       try
@@ -339,7 +294,7 @@ public sealed class JobCulturePropagationTests
    }
 
    [Fact]
-   public void PerformNowAsync_HasNoCultureOverload_AndScheduledJobInfoExposesNoCulture()
+   public void PerformNowAsync_ScheduledJobInfo_AndJobScheduleOptions_HaveNoCultureMembers()
    {
       typeof(IJobScheduler).GetMethods()
          .Where(m => m.Name == nameof(IJobScheduler.PerformNowAsync))

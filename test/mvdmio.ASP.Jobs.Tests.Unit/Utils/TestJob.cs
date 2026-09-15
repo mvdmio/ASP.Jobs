@@ -13,6 +13,8 @@ public class TestJob : Job<TestJob.Parameters>
 
    public override async Task<Parameters> ExecuteAsync(Parameters properties, CancellationToken cancellationToken)
    {
+      properties.Execute = ObservedCulture.Current;
+
       if(properties.Delay.HasValue)
          await Task.Delay(properties.Delay.Value, cancellationToken);
 
@@ -31,6 +33,7 @@ public class TestJob : Job<TestJob.Parameters>
 
    public override Task OnJobExecutedAsync(Parameters parameters, CancellationToken cancellationToken)
    {
+      parameters.ExecutedHook = ObservedCulture.Current;
       parameters.Executed = true;
       parameters.HookCallOrder.Add(nameof(OnJobExecutedAsync));
 
@@ -42,6 +45,7 @@ public class TestJob : Job<TestJob.Parameters>
 
    public override Task OnJobFailedAsync(Parameters parameters, Exception exception, CancellationToken cancellationToken)
    {
+      parameters.FailedHook = ObservedCulture.Current;
       parameters.Crashed = true;
       parameters.FailedWithException = exception;
       parameters.HookCallOrder.Add(nameof(OnJobFailedAsync));
@@ -54,6 +58,7 @@ public class TestJob : Job<TestJob.Parameters>
 
    public override Task OnJobRetryAsync(Parameters parameters, Exception exception, RetryContext retryContext, CancellationToken cancellationToken)
    {
+      parameters.RetryHook = ObservedCulture.Current;
       parameters.RetryContexts.Add(retryContext);
       parameters.HookCallOrder.Add(nameof(OnJobRetryAsync));
 
@@ -89,5 +94,10 @@ public class TestJob : Job<TestJob.Parameters>
 
       public List<RetryContext> RetryContexts { get; } = [];
       public List<string> HookCallOrder { get; } = [];
+
+      public ObservedCulture? Execute { get; set; }
+      public ObservedCulture? ExecutedHook { get; set; }
+      public ObservedCulture? FailedHook { get; set; }
+      public ObservedCulture? RetryHook { get; set; }
    }
 }

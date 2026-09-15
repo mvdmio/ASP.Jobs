@@ -271,7 +271,8 @@ internal sealed class JobRunnerService : BackgroundService
 
             if (matchedBehavior is not null && jobBusItem.Attempt < matchedBehavior.MaxRetriesValue)
             {
-               await RetryJobAsync(jobBusItem, job, executionException, matchedBehavior, activity, cancellationToken);
+               // Delay-failure's OnJobFailedAsync stays under Captured Culture; finalization runs after restore.
+               shouldFinalizeChain = await RetryJobAsync(jobBusItem, job, executionException, matchedBehavior, activity, cancellationToken);
             }
             else
             {
@@ -292,7 +293,7 @@ internal sealed class JobRunnerService : BackgroundService
          await FinalizeChainAsync(jobBusItem, cancellationToken);
    }
 
-   private async Task RetryJobAsync(JobStoreItem jobBusItem, IJob job, Exception exception, RetryBehavior matchedBehavior, Activity? activity, CancellationToken cancellationToken)
+   private async Task<bool> RetryJobAsync(JobStoreItem jobBusItem, IJob job, Exception exception, RetryBehavior matchedBehavior, Activity? activity, CancellationToken cancellationToken)
    {
       var nextAttempt = jobBusItem.Attempt + 1;
       TimeSpan delay;
@@ -308,7 +309,7 @@ internal sealed class JobRunnerService : BackgroundService
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {
          // Ignore cancellation exceptions; they are expected when the service is stopped.
-         return;
+         return false;
       }
       catch (Exception ex)
       {
@@ -318,8 +319,7 @@ internal sealed class JobRunnerService : BackgroundService
          activity?.SetStatus(ActivityStatusCode.Error, "Retry delay computation failed");
 
          await InvokeHookSafelyAsync(() => job.OnJobFailedAsync(jobBusItem.Parameters, exception, cancellationToken), nameof(IJob.OnJobFailedAsync), jobBusItem.JobType);
-         await FinalizeChainAsync(jobBusItem, cancellationToken);
-         return;
+         return true;
       }
 
       var nextAttemptAtUtc = _clock.UtcNow + delay;
@@ -375,6 +375,8 @@ internal sealed class JobRunnerService : BackgroundService
       {
          // Ignore cancellation exceptions; they are expected when the service is stopped.
       }
+
+      return false;
    }
 
    /// <summary>

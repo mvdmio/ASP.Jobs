@@ -34,7 +34,8 @@ public sealed class PostgresCultureTests : IAsyncLifetime
       _db = fixture.DatabaseConnection;
 
       var services = new ServiceCollection();
-      services.RegisterJob<CultureRecordingJob>();
+      services.AddSingleton<TestJobRetryPolicyProvider>();
+      services.RegisterJob<TestJob>();
       _services = services.BuildServiceProvider();
 
       _scheduler = new JobScheduler(_services, Storage, _harness.Clock);
@@ -53,7 +54,7 @@ public sealed class PostgresCultureTests : IAsyncLifetime
    public async Task ExplicitCulture_RoundTripsThroughDatabase()
    {
       // Act
-      await _scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(new CultureRecordingJob.Parameters(), new CultureInfo("nl-NL"), CancellationToken);
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(new TestJob.Parameters(), new CultureInfo("nl-NL"), CancellationToken);
 
       // Assert
       var stored = (await Storage.GetScheduledJobsAsync(CancellationToken)).Single();
@@ -64,27 +65,13 @@ public sealed class PostgresCultureTests : IAsyncLifetime
    [Fact]
    public async Task AmbientCulture_RoundTripsBothValuesIndependently()
    {
-      var originalCulture = CultureInfo.CurrentCulture;
-      var originalUICulture = CultureInfo.CurrentUICulture;
-      try
-      {
-         // Arrange
-         CultureInfo.CurrentCulture = new CultureInfo("nl-NL");
-         CultureInfo.CurrentUICulture = new CultureInfo("de-DE");
+      using var _ = new ThreadCultureScope("nl-NL", "de-DE");
 
-         // Act
-         await _scheduler.PerformAsapAsync<CultureRecordingJob, CultureRecordingJob.Parameters>(new CultureRecordingJob.Parameters(), CancellationToken);
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(new TestJob.Parameters(), CancellationToken);
 
-         // Assert
-         var stored = (await Storage.GetScheduledJobsAsync(CancellationToken)).Single();
-         stored.CultureName.Should().Be("nl-NL");
-         stored.UICultureName.Should().Be("de-DE");
-      }
-      finally
-      {
-         CultureInfo.CurrentCulture = originalCulture;
-         CultureInfo.CurrentUICulture = originalUICulture;
-      }
+      var stored = (await Storage.GetScheduledJobsAsync(CancellationToken)).Single();
+      stored.CultureName.Should().Be("nl-NL");
+      stored.UICultureName.Should().Be("de-DE");
    }
 
    [Fact]
@@ -98,9 +85,9 @@ public sealed class PostgresCultureTests : IAsyncLifetime
          """,
          new Dictionary<string, object?> {
             { "id", Guid.NewGuid() },
-            { "job_type", typeof(CultureRecordingJob).AssemblyQualifiedName },
+            { "job_type", typeof(TestJob).AssemblyQualifiedName },
             { "parameters_json", new TypedQueryParameter("{}", NpgsqlDbType.Jsonb) },
-            { "parameters_type", typeof(CultureRecordingJob.Parameters).AssemblyQualifiedName },
+            { "parameters_type", typeof(TestJob.Parameters).AssemblyQualifiedName },
             { "application_name", _harness.Configuration.ApplicationName },
             { "job_name", "pre-feature-job" },
             { "perform_at", _harness.Clock.UtcNow }
