@@ -175,6 +175,97 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
    }
 
    [Fact]
+   public async Task WaitForNextJob_DeletesTheClaimedRow_WhenAnotherPendingJobWithSameNameExists()
+   {
+      // Arrange - the rolling-deploy shape: an old instance holds the Claim on a job it cannot load, while a new
+      // instance has already re-enqueued the same job name.
+      await InsertUnresolvableJobAsync("SharedJobName", Clock.UtcNow);
+
+      var supersedingJob = JobStoreItemFactory.MakeTestJob(jobName: "SharedJobName", performAt: Clock.UtcNow.AddHours(1));
+      await Storage.ScheduleJobAsync(supersedingJob, CancellationToken);
+
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+      cts.CancelAfter(TimeSpan.FromMilliseconds(300));
+
+      // Act
+      var result = await Storage.WaitForNextJobAsync(cts.Token);
+
+      // Assert - the Unresolvable Claimed row is deleted rather than released, and the newer pending row is
+      // untouched: same id, same perform_at, Claim fields still null, and it remains the only pending row for
+      // that job name.
+      result.Should().BeNull();
+
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().ContainSingle();
+      jobs[0].Id.Should().Be(supersedingJob.JobId);
+      jobs[0].JobName.Should().Be("SharedJobName");
+      jobs[0].PerformAt.Should().BeCloseTo(supersedingJob.PerformAt, TimeSpan.FromSeconds(1));
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+   }
+
+   [Fact]
+   public async Task WaitForNextJob_ContinuesTheWaitLoop_AfterSupersedingAnUnresolvableClaim()
+   {
+      // Arrange - the superseded row is due earlier, so the Claim query reaches it first; another resolvable job
+      // is also due.
+      await InsertUnresolvableJobAsync("SharedJobName", Clock.UtcNow.Subtract(TimeSpan.FromMinutes(10)));
+
+      var supersedingJob = JobStoreItemFactory.MakeTestJob(jobName: "SharedJobName", performAt: Clock.UtcNow.AddHours(1));
+      await Storage.ScheduleJobAsync(supersedingJob, CancellationToken);
+
+      var otherResolvableJob = JobStoreItemFactory.MakeTestJob(jobName: "OtherResolvableJob", performAt: Clock.UtcNow);
+      await Storage.ScheduleJobAsync(otherResolvableJob, CancellationToken);
+
+      // Act - the wait loop supersedes (deletes) the Unresolvable row and carries on to return the other due job.
+      var result = await Storage.WaitForNextJobAsync(CancellationToken);
+
+      // Assert
+      result.Should().NotBeNull();
+      result!.JobId.Should().Be(otherResolvableJob.JobId);
+
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().ContainSingle(x => x.JobName == "SharedJobName" && x.Id == supersedingJob.JobId);
+   }
+
+   [Fact]
+   public async Task WaitForNextJob_SupersedesSafely_UnderConcurrentSchedulingRace()
+   {
+      // Repeats a "defer vs. fresh schedule" race under real concurrency: the NOT EXISTS guard usually catches
+      // the conflict, but occasionally the fresh schedule's INSERT lands between the guard's check and the
+      // UPDATE's commit, which must fall back to the unique-violation path. Either way, the partial unique index
+      // must guarantee exactly one not-started row per name.
+      for (var i = 0; i < 5; i++)
+      {
+         var jobName = $"RaceJob-{i}";
+         // Use TestContext's own token for setup, not the class-level CancellationToken field: that one is bound
+         // to a single 1-second budget for the whole test, and this loop's per-iteration wait calls (below)
+         // consume most of it across 5 iterations.
+         await InsertUnresolvableJobAsync(jobName, Clock.UtcNow, ct: TestContext.Current.CancellationToken);
+
+         // Not-yet-due, so the wait loop's own Claim query can never pick this row up after superseding the
+         // Unresolvable one - keeping this test isolated to the guard/unique-violation race, the same shape as
+         // TryScheduleRetryAsync_ShouldSupersedeSafely_UnderConcurrentSchedulingRace above.
+         var supersedingJob = JobStoreItemFactory.MakeTestJob(jobName: jobName, performAt: Clock.UtcNow.AddHours(1));
+
+         using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+         cts.CancelAfter(TimeSpan.FromMilliseconds(300));
+
+         var waitTask = Storage.WaitForNextJobAsync(cts.Token);
+         var scheduleTask = Storage.ScheduleJobAsync(supersedingJob, TestContext.Current.CancellationToken);
+
+         await Task.WhenAll(waitTask, scheduleTask);
+
+         var pendingJobsForName = _db.Dapper.Query<JobData>(
+            "SELECT * FROM mvdmio.jobs WHERE job_name = :job_name AND started_at IS NULL",
+            new Dictionary<string, object?> { { "job_name", jobName } }
+         ).ToList();
+
+         pendingJobsForName.Should().HaveCount(1);
+      }
+   }
+
+   [Fact]
    public async Task Listing_SkipsUnresolvableRows_AndLeavesThemInTheTable()
    {
       // Arrange
@@ -234,7 +325,7 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
       GetJobsFromDatabase().Single().UnresolvableSince.Should().BeNull();
    }
 
-   private async Task InsertUnresolvableJobAsync(string jobName, DateTime performAt, DateTime? unresolvableSince = null)
+   private async Task InsertUnresolvableJobAsync(string jobName, DateTime performAt, DateTime? unresolvableSince = null, CancellationToken? ct = null)
    {
       await _db.Dapper.ExecuteAsync(
          """
@@ -251,7 +342,7 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
             { "perform_at", performAt },
             { "unresolvable_since", unresolvableSince }
          },
-         ct: CancellationToken
+         ct: ct ?? CancellationToken
       );
    }
 

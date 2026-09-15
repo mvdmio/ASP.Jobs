@@ -343,23 +343,61 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    ///    (or preserving) its Resolution Grace window, and remembers the job in this instance's skip list so it is
    ///    not Claimed again by this instance until the window lapses. A peer instance running a build that can load
    ///    the type is unaffected and Claims the job immediately, since <c>perform_at</c> is left untouched.
+   ///    <para>
+   ///    The release carries the same <c>NOT EXISTS</c> guard <see cref="TryScheduleRetryAsync"/> uses: if another
+   ///    pending row already holds the same application name and job name - the rolling-deploy shape, where a new
+   ///    instance re-enqueues at boot while an old instance still holds the Claim - releasing would put two pending
+   ///    rows under one name, which the partial unique index forbids. In that case the Claimed row is superseded
+   ///    (deleted) instead of released, leaving the newer pending row untouched.
+   ///    </para>
    /// </summary>
    private async Task DeferUnresolvableJobAsync(JobData job, DateTime now, CancellationToken ct)
    {
-      await Db.Dapper.ExecuteAsync(
-         """
-         UPDATE mvdmio.jobs
-         SET started_at = NULL,
-             started_by = NULL,
-             unresolvable_since = COALESCE(unresolvable_since, :now)
-         WHERE id = :id
-         """,
-         new Dictionary<string, object?> {
-            { "id", job.Id },
-            { "now", now }
-         },
-         ct: ct
-      );
+      Guid? updatedId;
+
+      try
+      {
+         updatedId = await Db.Dapper.QueryFirstOrDefaultAsync<Guid?>(
+            """
+            UPDATE mvdmio.jobs
+            SET started_at = NULL,
+                started_by = NULL,
+                unresolvable_since = COALESCE(unresolvable_since, :now)
+            WHERE id = :id
+              AND NOT EXISTS (
+                 SELECT 1
+                 FROM mvdmio.jobs other
+                 WHERE other.application_name = :application_name
+                   AND other.job_name = :job_name
+                   AND other.started_at IS NULL
+                   AND other.id <> :id
+              )
+            RETURNING id
+            """,
+            new Dictionary<string, object?> {
+               { "id", job.Id },
+               { "now", now },
+               { "application_name", job.ApplicationName },
+               { "job_name", job.JobName }
+            },
+            ct: ct
+         );
+      }
+      catch (QueryException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg)
+      {
+         // A same-name job was inserted concurrently between our NOT EXISTS check and the UPDATE commit - treat as
+         // supersession. Db.Dapper wraps the driver exception in a QueryException, so the PostgresException is
+         // unwrapped from InnerException, exactly as TryScheduleRetryAsync does.
+         await SupersedeUnresolvableJobAsync(job, "a concurrently-scheduled job of the same name", pg, ct);
+         return;
+      }
+
+      if (updatedId is null)
+      {
+         // A different pending job with the same name already exists - the Claimed row is superseded.
+         await SupersedeUnresolvableJobAsync(job, "a newer pending job of the same name", null, ct);
+         return;
+      }
 
       await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
 
@@ -371,6 +409,22 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          job.Id,
          job.JobType
       );
+   }
+
+   private async Task SupersedeUnresolvableJobAsync(JobData job, string supersededByDescription, PostgresException? exception, CancellationToken ct)
+   {
+      _logger.LogInformation(
+         exception,
+         "Job '{JobName}' (ID: {JobId}) was superseded by {SupersededByDescription}; the Claim was dropped rather than released.",
+         job.JobName,
+         job.Id,
+         supersededByDescription
+      );
+
+      await DeleteJobByIdAsync(job.Id, ct);
+
+      // The job is gone - drop its skip-list entry (if any) so the set cannot grow without bound.
+      _unresolvableJobSkipList.TryRemove(job.Id, out _);
    }
 
    /// <summary>
