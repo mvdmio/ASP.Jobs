@@ -134,7 +134,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
             var skippedJobIds = _unresolvableJobSkipList.JobIds;
 
             var selectedJob = await Db.Dapper.QueryFirstOrDefaultAsync<JobData>(
-               """
+               $"""
                UPDATE mvdmio.jobs
                SET started_at = :now,
                    started_by = :instance_id
@@ -149,7 +149,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                   LIMIT 1
                   FOR UPDATE SKIP LOCKED
                )
-               RETURNING id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt, unresolvable_since
+               RETURNING {JobData.Columns}
                """,
                new Dictionary<string, object?> {
                   { "now", now },
@@ -263,8 +263,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       ThrowIfNotInitialized();
 
       var jobData = await Db.Dapper.QueryAsync<JobData>(
-         """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt, unresolvable_since
+         $"""
+         SELECT {JobData.Columns}
          FROM mvdmio.jobs
          WHERE started_at IS NULL
          ORDER BY perform_at, created_at
@@ -280,8 +280,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       ThrowIfNotInitialized();
 
       var jobData = await Db.Dapper.QueryAsync<JobData>(
-         """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt, unresolvable_since
+         $"""
+         SELECT {JobData.Columns}
          FROM mvdmio.jobs
          WHERE started_at IS NOT NULL
          ORDER BY perform_at, created_at

@@ -11,6 +11,14 @@ namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 /// </summary>
 internal sealed class JobData
 {
+   /// <summary>
+   ///    The <c>mvdmio.jobs</c> columns that make up a <see cref="JobData"/>, as a comma-separated list for a
+   ///    <c>SELECT</c> or <c>RETURNING</c> clause. Every statement that reads a <see cref="JobData"/> uses this, so
+   ///    that adding a property here cannot leave one statement behind still reading the old shape - which would
+   ///    silently hand back a default for the missing column rather than fail.
+   /// </summary>
+   public const string Columns =
+      "id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt, unresolvable_since";
 
    /// <summary>
    ///    Gets the unique identifier for the job.
