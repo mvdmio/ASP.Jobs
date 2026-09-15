@@ -1,6 +1,6 @@
 # 01 — Jobs run under the culture they were scheduled in
 
-Status: pending
+Status: done
 Blocked by: none
 
 ## What to build
@@ -34,16 +34,24 @@ Projects: mvdmio.ASP.Jobs, mvdmio.ASP.Jobs.Tests.Unit
 
 ## Acceptance criteria
 
-- [ ] An ASAP job scheduled under culture A / UI culture B, with the thread then switched to something else before the runner drains, executes under A and B.
-- [ ] An "at time" job does the same (ambient default and explicit override).
-- [ ] An explicit `CultureInfo` on ASAP, At, or CRON pins both fields to that culture's name regardless of the scheduling thread.
-- [ ] A batch scheduled with one explicit culture stores and runs every item under that culture; a default batch captures the thread once for the whole batch.
-- [ ] An options-carrying overload accepts an explicit culture together with job name / group.
-- [ ] `PerformCronAsync` without a culture stores empty-string names (invariant); with a culture stores that name on both fields.
-- [ ] After a CRON job finishes, the next occurrence carries the same two culture-name fields (asserted at the storage seam; no new CRON timing harness).
-- [ ] A parent job that schedules a child with a default overload has that child execute under the parent's Captured Culture.
-- [ ] After a job with a Captured Culture runs, a following job with no Captured Culture is unaffected (thread restored; null means ambient).
-- [ ] An unresolvable stored culture name fails the job through `OnJobFailedAsync` without running `ExecuteAsync`.
-- [ ] `OnJobExecutedAsync` / `OnJobFailedAsync` (and `OnJobRetryAsync` when a retry is scheduled) observe the Captured Culture, not the restored ambient culture.
-- [ ] `PerformNowAsync` has no culture overload; existing scheduling call sites still compile.
-- [ ] `ScheduledJobInfo` does not expose Captured Culture.
+- [x] An ASAP job scheduled under culture A / UI culture B, with the thread then switched to something else before the runner drains, executes under A and B.
+- [x] An "at time" job does the same (ambient default and explicit override).
+- [x] An explicit `CultureInfo` on ASAP, At, or CRON pins both fields to that culture's name regardless of the scheduling thread.
+- [x] A batch scheduled with one explicit culture stores and runs every item under that culture; a default batch captures the thread once for the whole batch.
+- [x] An options-carrying overload accepts an explicit culture together with job name / group.
+- [x] `PerformCronAsync` without a culture stores empty-string names (invariant); with a culture stores that name on both fields.
+- [x] After a CRON job finishes, the next occurrence carries the same two culture-name fields (asserted at the storage seam; no new CRON timing harness).
+- [x] A parent job that schedules a child with a default overload has that child execute under the parent's Captured Culture.
+- [x] After a job with a Captured Culture runs, a following job with no Captured Culture is unaffected (thread restored; null means ambient).
+- [x] An unresolvable stored culture name fails the job through `OnJobFailedAsync` without running `ExecuteAsync`.
+- [x] `OnJobExecutedAsync` / `OnJobFailedAsync` (and `OnJobRetryAsync` when a retry is scheduled) observe the Captured Culture, not the restored ambient culture.
+- [x] `PerformNowAsync` has no culture overload; existing scheduling call sites still compile.
+- [x] `ScheduledJobInfo` does not expose Captured Culture.
+
+## Outcome
+
+Most of the culture capture/scheduler/storage surface already existed on `main` (from the earlier culture feature commit). This step's code change was restoring Culture Reapplication around the execution-time hooks after the later retry refactor had moved `OnJobExecutedAsync` / `OnJobFailedAsync` / `OnJobRetryAsync` outside the culture `try`/`finally`.
+
+- `PerformJob` now keeps the Captured Culture applied through those hooks; `FinalizeChainAsync` / next-occurrence scheduling run after restore.
+- `CultureRecordingJob` records cultures in hooks and carries a small `InvalidOperationException` retry policy so the hook/retry acceptance test can exercise `OnJobRetryAsync`.
+- Unit suite for footprint projects is green (`mvdmio.ASP.Jobs.Tests.Unit`). Postgres persistence remains Step 02.

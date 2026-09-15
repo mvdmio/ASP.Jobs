@@ -209,45 +209,77 @@ internal sealed class JobRunnerService : BackgroundService
 
       Exception? executionException = null;
       var wasCanceled = false;
+      var shouldFinalizeChain = false;
 
-      // Save the thread's culture so we can restore it after the job runs; jobs run on shared thread-pool
-      // threads, so without a restore one job's Captured Culture would leak into the next job on that thread.
+      // Save the thread's culture so we can restore it after the execution-time lifecycle; jobs run on shared
+      // thread-pool threads, so without a restore one job's Captured Culture would leak into the next job.
       var originalCulture = CultureInfo.CurrentCulture;
       var originalUICulture = CultureInfo.CurrentUICulture;
 
       try
       {
-         // Resolving/applying the Captured Culture happens inside the try on purpose: an unresolvable culture
-         // then rides the normal job-failure path (logged + OnJobFailedAsync) instead of being lost on this
-         // fire-and-forget task.
-         ApplyCapturedCulture(jobBusItem);
+         try
+         {
+            // Resolving/applying the Captured Culture happens inside the try on purpose: an unresolvable culture
+            // then rides the normal job-failure path (logged + OnJobFailedAsync) instead of being lost on this
+            // fire-and-forget task.
+            ApplyCapturedCulture(jobBusItem);
 
-         _logger.LogInformation("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
-         activity?.AddEvent(new ActivityEvent("Job Started"));
+            _logger.LogInformation("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+            activity?.AddEvent(new ActivityEvent("Job Started"));
 
-         await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
+            await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
 
-         activity?.AddEvent(new ActivityEvent("Job Completed"));
-         activity?.SetStatus(ActivityStatusCode.Ok, "Job completed successfully");
+            activity?.AddEvent(new ActivityEvent("Job Completed"));
+            activity?.SetStatus(ActivityStatusCode.Ok, "Job completed successfully");
 
-         var endTime = Stopwatch.GetTimestamp();
-         var duration = new TimeSpan(endTime - startTime);
-         _logger.LogInformation("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
-      }
-      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-      {
-         // Ignore cancellation exceptions; they are expected when the service is stopped.
-         wasCanceled = true;
-         activity?.AddEvent(new ActivityEvent("Job Canceled"));
-      }
-      catch (Exception e)
-      {
-         executionException = e;
+            var endTime = Stopwatch.GetTimestamp();
+            var duration = new TimeSpan(endTime - startTime);
+            _logger.LogInformation("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
+         }
+         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+         {
+            // Ignore cancellation exceptions; they are expected when the service is stopped.
+            wasCanceled = true;
+            activity?.AddEvent(new ActivityEvent("Job Canceled"));
+         }
+         catch (Exception e)
+         {
+            executionException = e;
 
-         _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+            _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
 
-         activity?.AddException(e);
-         activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
+            activity?.AddException(e);
+            activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
+         }
+
+         // Hooks stay under the Captured Culture; storage finalization runs after restore below.
+         if (wasCanceled)
+         {
+            // Cancellation during shutdown is not a failure and is not retried; the chain simply ends here.
+            shouldFinalizeChain = true;
+         }
+         else if (executionException is null)
+         {
+            // Runner-side hooks are fire-safe observers: a throw is logged but never changes the chain outcome.
+            await InvokeHookSafelyAsync(() => job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken), nameof(IJob.OnJobExecutedAsync), jobBusItem.JobType);
+            shouldFinalizeChain = true;
+         }
+         else
+         {
+            var matchedBehavior = job.RetryPolicy.FindMatchingBehavior(executionException);
+
+            if (matchedBehavior is not null && jobBusItem.Attempt < matchedBehavior.MaxRetriesValue)
+            {
+               await RetryJobAsync(jobBusItem, job, executionException, matchedBehavior, activity, cancellationToken);
+            }
+            else
+            {
+               // No matching behavior, or the retry budget is depleted: the chain ends in failure.
+               await InvokeHookSafelyAsync(() => job.OnJobFailedAsync(jobBusItem.Parameters, executionException, cancellationToken), nameof(IJob.OnJobFailedAsync), jobBusItem.JobType);
+               shouldFinalizeChain = true;
+            }
+         }
       }
       finally
       {
@@ -255,32 +287,9 @@ internal sealed class JobRunnerService : BackgroundService
          CultureInfo.CurrentUICulture = originalUICulture;
       }
 
-      if (wasCanceled)
-      {
-         // Cancellation during shutdown is not a failure and is not retried; the chain simply ends here.
+      // Storage finalization / next-occurrence scheduling runs after restore — outside Culture Reapplication.
+      if (shouldFinalizeChain)
          await FinalizeChainAsync(jobBusItem, cancellationToken);
-         return;
-      }
-
-      if (executionException is null)
-      {
-         // Runner-side hooks are fire-safe observers: a throw is logged but never changes the chain outcome.
-         await InvokeHookSafelyAsync(() => job.OnJobExecutedAsync(jobBusItem.Parameters, cancellationToken), nameof(IJob.OnJobExecutedAsync), jobBusItem.JobType);
-         await FinalizeChainAsync(jobBusItem, cancellationToken);
-         return;
-      }
-
-      var matchedBehavior = job.RetryPolicy.FindMatchingBehavior(executionException);
-
-      if (matchedBehavior is not null && jobBusItem.Attempt < matchedBehavior.MaxRetriesValue)
-      {
-         await RetryJobAsync(jobBusItem, job, executionException, matchedBehavior, activity, cancellationToken);
-         return;
-      }
-
-      // No matching behavior, or the retry budget is depleted: the chain ends in failure.
-      await InvokeHookSafelyAsync(() => job.OnJobFailedAsync(jobBusItem.Parameters, executionException, cancellationToken), nameof(IJob.OnJobFailedAsync), jobBusItem.JobType);
-      await FinalizeChainAsync(jobBusItem, cancellationToken);
    }
 
    private async Task RetryJobAsync(JobStoreItem jobBusItem, IJob job, Exception exception, RetryBehavior matchedBehavior, Activity? activity, CancellationToken cancellationToken)
