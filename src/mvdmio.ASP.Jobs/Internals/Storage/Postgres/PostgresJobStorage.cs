@@ -167,7 +167,15 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                var jobStoreItem = selectedJob.ToJobStoreItem();
                if (jobStoreItem is null)
                {
-                  await DeferUnresolvableJobAsync(selectedJob, now, ct);
+                  if (selectedJob.UnresolvableSince is not null && now - selectedJob.UnresolvableSince.Value >= ResolutionGrace)
+                  {
+                     await DeleteExpiredUnresolvableJobAsync(selectedJob, now, ct);
+                  }
+                  else
+                  {
+                     await DeferUnresolvableJobAsync(selectedJob, now, ct);
+                  }
+
                   continue;
                }
 
@@ -408,6 +416,29 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          job.JobName,
          job.Id,
          job.JobType
+      );
+   }
+
+   /// <summary>
+   ///    Deletes a Claimed job whose Resolution Grace window has closed: the instance has just re-confirmed it
+   ///    cannot load the job's job type or parameters type, and the row's <c>unresolvable_since</c> stamp is
+   ///    already <see cref="ResolutionGrace"/> old or older. This is the only path in the library that deletes an
+   ///    Unresolvable Job, and it only ever runs at a Claim where the load has just failed again - a stamp on its
+   ///    own never causes a deletion. Logs the single warning this design produces.
+   /// </summary>
+   private async Task DeleteExpiredUnresolvableJobAsync(JobData job, DateTime now, CancellationToken ct)
+   {
+      await DeleteJobByIdAsync(job.Id, ct);
+
+      // The job is gone - drop its skip-list entry (if any) so the set cannot grow without bound.
+      _unresolvableJobSkipList.TryRemove(job.Id, out _);
+
+      _logger.LogWarning(
+         "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded in this process for {UnloadableDuration}, past the Resolution Grace window. The row was deleted.",
+         job.JobName,
+         job.Id,
+         job.JobType,
+         now - job.UnresolvableSince!.Value
       );
    }
 

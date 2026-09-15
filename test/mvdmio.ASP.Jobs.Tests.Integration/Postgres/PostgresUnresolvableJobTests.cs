@@ -108,15 +108,17 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
    }
 
    [Fact]
-   public async Task WaitForNextJob_KeepsOriginalStamp_WhenDeferredAgainAfterTheSkipEntryExpires()
+   public async Task WaitForNextJob_DeletesTheRow_WhenReClaimedAfterItsOwnSkipEntryHasLapsed()
    {
-      // Arrange
+      // Arrange - the skip-list entry and the Resolution Grace window share the same five minutes by design
+      // (ADR-0005 / Spec "The skip list"): once this instance's own skip entry lapses and it re-Claims the row,
+      // the stamp it wrote is necessarily old enough to delete. There is no "defer again with the same stamp"
+      // case once an instance revisits a row it skipped itself.
       var performAt = Clock.UtcNow;
       await InsertUnresolvableJobAsync("UnresolvableJob", performAt);
 
       await Storage.WaitForNextJobAsync(CancellationToken);
-      var originalStamp = GetJobsFromDatabase().Single().UnresolvableSince;
-      originalStamp.Should().NotBeNull();
+      GetJobsFromDatabase().Single().UnresolvableSince.Should().NotBeNull();
 
       // Act - move the storage clock past the Resolution Grace window, so this instance's own skip entry has
       // expired and it re-Claims the same row.
@@ -126,12 +128,8 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
       secondCts.CancelAfter(TimeSpan.FromMilliseconds(300));
       await Storage.WaitForNextJobAsync(secondCts.Token);
 
-      // Assert - the stamp is unchanged: it is only ever written when it was null.
-      var jobs = GetJobsFromDatabase();
-      jobs.Should().HaveCount(1);
-      jobs[0].StartedAt.Should().BeNull();
-      jobs[0].PerformAt.Should().BeCloseTo(performAt, TimeSpan.FromSeconds(1));
-      jobs[0].UnresolvableSince!.Value.Should().BeCloseTo(originalStamp!.Value, TimeSpan.FromSeconds(1));
+      // Assert - the row is deleted, not deferred again.
+      GetJobsFromDatabase().Should().BeEmpty();
    }
 
    [Fact]
@@ -263,6 +261,52 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
 
          pendingJobsForName.Should().HaveCount(1);
       }
+   }
+
+   [Fact]
+   public async Task WaitForNextJob_DeletesTheRow_WhenTheStampIsFiveMinutesOldOrOlder_AndReturnsAnotherDueJob()
+   {
+      // Arrange - the stamp is exactly at the Resolution Grace boundary: five minutes old.
+      var staleStamp = Clock.UtcNow.Subtract(TimeSpan.FromMinutes(5));
+      await InsertUnresolvableJobAsync("UnresolvableJob", Clock.UtcNow, unresolvableSince: staleStamp);
+
+      var resolvableJob = JobStoreItemFactory.MakeTestJob(jobName: "ResolvableJob", performAt: Clock.UtcNow);
+      await Storage.ScheduleJobAsync(resolvableJob, CancellationToken);
+
+      // Act - the wait loop re-confirms it cannot load the Unresolvable row, finds the stamp old enough, deletes
+      // it, and carries on to return the other due job in the same call.
+      var claimedJob = await Storage.WaitForNextJobAsync(CancellationToken);
+
+      // Assert
+      claimedJob.Should().NotBeNull();
+      claimedJob!.JobId.Should().Be(resolvableJob.JobId);
+
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().ContainSingle(x => x.JobName == "ResolvableJob");
+   }
+
+   [Fact]
+   public async Task WaitForNextJob_DefersRatherThanDeletes_WhenTheStampIsNewerThanFiveMinutes()
+   {
+      // Arrange - the stamp is inside the Resolution Grace window.
+      var freshStamp = Clock.UtcNow.Subtract(TimeSpan.FromMinutes(4));
+      await InsertUnresolvableJobAsync("UnresolvableJob", Clock.UtcNow, unresolvableSince: freshStamp);
+
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+      cts.CancelAfter(TimeSpan.FromMilliseconds(300));
+
+      // Act
+      var result = await Storage.WaitForNextJobAsync(cts.Token);
+
+      // Assert - deferred, not deleted: the row is untouched apart from its Claim fields, and the original
+      // stamp is preserved rather than being overwritten.
+      result.Should().BeNull();
+
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().ContainSingle();
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+      jobs[0].UnresolvableSince!.Value.Should().BeCloseTo(freshStamp, TimeSpan.FromSeconds(1));
    }
 
    [Fact]
