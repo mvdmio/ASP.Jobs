@@ -190,6 +190,41 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    }
 
    [Fact]
+   public async Task TryScheduleRetryAsync_ClearsUnresolvableSince_LeftOverFromAnEarlierEpisode()
+   {
+      // A stamp left on the row by an earlier Unresolvable episode (e.g. an old instance briefly could not load
+      // the class before this instance's Claim ran the job) must not survive a retry reschedule - otherwise the
+      // stamp could be far older than the Resolution Grace window, and the next Claim by an old instance would
+      // delete the row on the spot with no grace at all. See Spec: "A stale stamp is never trusted".
+      var jobStoreItem = JobStoreItemFactory.MakeTestJob(jobName: "RetryJob", performAt: Clock.UtcNow);
+      await Storage.ScheduleJobAsync(jobStoreItem, CancellationToken);
+      var inProgress = await Storage.WaitForNextJobAsync(CancellationToken);
+
+      // Stamp the row directly, simulating a stale leftover unresolvable_since.
+      await _db.Dapper.ExecuteAsync(
+         "UPDATE mvdmio.jobs SET unresolvable_since = :stamp WHERE id = :id",
+         new Dictionary<string, object?> {
+            { "stamp", Clock.UtcNow.Subtract(TimeSpan.FromDays(1)) },
+            { "id", jobStoreItem.JobId }
+         },
+         ct: CancellationToken
+      );
+
+      // Act
+      var result = await Storage.TryScheduleRetryAsync(inProgress!, Clock.UtcNow.AddMinutes(1), CancellationToken);
+
+      // Assert
+      result.Should().BeTrue();
+
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().HaveCount(1);
+      jobs[0].UnresolvableSince.Should().BeNull();
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+      jobs[0].Attempt.Should().Be(1);
+   }
+
+   [Fact]
    public async Task TryScheduleRetryAsync_ShouldSupersedeChain_WhenAnotherPendingJobWithSameNameExists()
    {
       // Arrange

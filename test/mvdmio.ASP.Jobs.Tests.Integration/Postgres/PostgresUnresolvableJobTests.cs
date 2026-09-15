@@ -310,6 +310,95 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
    }
 
    [Fact]
+   public async Task WaitForNextJob_ClearsTheStamp_WhenTheClaimedRowsClassesDoLoad()
+   {
+      // A row can carry a stale unresolvable_since stamp - from an earlier Unresolvable episode - even though
+      // its job class and parameters class both load fine now (e.g. the class was only briefly unavailable to a
+      // now-retired instance). Per the Spec ("A stale stamp is never trusted"), a Claim that loads both classes
+      // must clear the stamp before running the job, so a later long retry backoff does not carry a stamp far
+      // older than the Resolution Grace window into a future Claim by an instance that cannot load the class.
+      var jobStoreItem = JobStoreItemFactory.MakeTestJob(jobName: "ResolvableJob", performAt: Clock.UtcNow);
+      await Storage.ScheduleJobAsync(jobStoreItem, CancellationToken);
+
+      var staleStamp = Clock.UtcNow.Subtract(TimeSpan.FromDays(1));
+      await _db.Dapper.ExecuteAsync(
+         "UPDATE mvdmio.jobs SET unresolvable_since = :stamp WHERE id = :id",
+         new Dictionary<string, object?> {
+            { "stamp", staleStamp },
+            { "id", jobStoreItem.JobId }
+         },
+         ct: CancellationToken
+      );
+
+      // Act
+      var claimedJob = await Storage.WaitForNextJobAsync(CancellationToken);
+
+      // Assert - returned for execution, and the stamp is cleared in the table.
+      claimedJob.Should().NotBeNull();
+      claimedJob!.JobId.Should().Be(jobStoreItem.JobId);
+
+      GetJobsFromDatabase().Single().UnresolvableSince.Should().BeNull();
+   }
+
+   [Fact]
+   public async Task WaitForNextJob_DeletesAStaleStampedRow_ThatACapableInstanceRanAndRetried_WhenAnIncapableInstanceLaterClaimsIt()
+   {
+      // The exact hole this step closes: a job stamped by an old instance, run by a new (capable) one, and put
+      // back onto a retry backoff, must not be destroyed by its own stale stamp on a later Claim by an
+      // incapable instance. The retry reschedule must have cleared the stamp, so the row survives the incapable
+      // instance's Claim by being deferred with a fresh stamp - not deleted outright, even though the original
+      // stamp (had it survived) would have been far older than the Resolution Grace window.
+      var resolvablePerformAt = Clock.UtcNow;
+      var jobStoreItem = JobStoreItemFactory.MakeTestJob(jobName: "FlakyJob", performAt: resolvablePerformAt);
+      await Storage.ScheduleJobAsync(jobStoreItem, CancellationToken);
+
+      // An old instance found it Unresolvable a long time ago (far older than five minutes).
+      await _db.Dapper.ExecuteAsync(
+         "UPDATE mvdmio.jobs SET unresolvable_since = :stamp WHERE id = :id",
+         new Dictionary<string, object?> {
+            { "stamp", Clock.UtcNow.Subtract(TimeSpan.FromDays(1)) },
+            { "id", jobStoreItem.JobId }
+         },
+         ct: CancellationToken
+      );
+
+      // A capable instance Claims and runs it - clearing the stamp - then the run fails and is put back onto a
+      // long retry backoff, which also clears the stamp (belt and suspenders: both paths clear it).
+      var claimed = await Storage.WaitForNextJobAsync(CancellationToken);
+      claimed.Should().NotBeNull();
+      GetJobsFromDatabase().Single().UnresolvableSince.Should().BeNull();
+
+      var longBackoff = Clock.UtcNow.AddHours(1);
+      await Storage.TryScheduleRetryAsync(claimed!, longBackoff, CancellationToken);
+      GetJobsFromDatabase().Single().UnresolvableSince.Should().BeNull();
+
+      // Advance the clock so the job becomes due for the backoff, then simulate the row becoming genuinely
+      // unresolvable in this process (e.g. the class is now gone from this build) and re-Claim it.
+      Clock.UtcNow = longBackoff;
+      await _db.Dapper.ExecuteAsync(
+         "UPDATE mvdmio.jobs SET job_type = :job_type, parameters_type = :parameters_type WHERE id = :id",
+         new Dictionary<string, object?> {
+            { "job_type", UnresolvableJobType },
+            { "parameters_type", UnresolvableParametersType },
+            { "id", jobStoreItem.JobId }
+         },
+         ct: CancellationToken
+      );
+
+      var result = await Storage.WaitForNextJobAsync(CancellationToken);
+
+      // Assert - deferred with a fresh stamp, not deleted: the stale stamp did not survive to cause a deletion.
+      result.Should().BeNull();
+
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().ContainSingle();
+      jobs[0].StartedAt.Should().BeNull();
+      jobs[0].StartedBy.Should().BeNull();
+      jobs[0].UnresolvableSince.Should().NotBeNull();
+      jobs[0].UnresolvableSince!.Value.Should().BeCloseTo(Clock.UtcNow, TimeSpan.FromSeconds(1));
+   }
+
+   [Fact]
    public async Task Listing_SkipsUnresolvableRows_AndLeavesThemInTheTable()
    {
       // Arrange

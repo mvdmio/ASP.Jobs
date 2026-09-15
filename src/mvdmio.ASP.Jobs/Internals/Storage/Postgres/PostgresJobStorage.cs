@@ -179,6 +179,11 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                   continue;
                }
 
+               if (selectedJob.UnresolvableSince is not null)
+               {
+                  await ClearUnresolvableStampAsync(selectedJob.Id, ct);
+               }
+
                return jobStoreItem;
             }
 
@@ -221,7 +226,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
             SET perform_at = :perform_at,
                 attempt = attempt + 1,
                 started_at = NULL,
-                started_by = NULL
+                started_by = NULL,
+                unresolvable_since = NULL
             WHERE id = :id
               AND application_name = :application_name
               AND NOT EXISTS (
@@ -439,6 +445,30 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          job.Id,
          job.JobType,
          now - job.UnresolvableSince!.Value
+      );
+   }
+
+   /// <summary>
+   ///    Clears a stale <c>unresolvable_since</c> stamp on a Claimed row whose job class and parameters class both
+   ///    loaded successfully, before the job is handed back for execution. A stamp is never trusted on its own - it
+   ///    only ever causes a deletion at a Claim where the load has just failed again - but a stamp left over from an
+   ///    earlier Unresolvable episode must not survive on a row that has since proven runnable. Without this, a job
+   ///    stamped by an old instance, then run and put back onto a long retry backoff by a new one, would carry a
+   ///    stamp far older than the Resolution Grace window, and the next Claim by an old instance would delete it on
+   ///    the spot with no grace at all.
+   /// </summary>
+   private async Task ClearUnresolvableStampAsync(Guid jobId, CancellationToken ct)
+   {
+      await Db.Dapper.ExecuteAsync(
+         """
+         UPDATE mvdmio.jobs
+         SET unresolvable_since = NULL
+         WHERE id = :id
+         """,
+         new Dictionary<string, object?> {
+            { "id", jobId }
+         },
+         ct: ct
       );
    }
 
