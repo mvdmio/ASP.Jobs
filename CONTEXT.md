@@ -28,6 +28,14 @@ _Avoid_: node, server, client
 Exclusive ownership of a due job by one Worker Instance for execution. Other Worker Instances will not run a job while it is Claimed.
 _Avoid_: lock, lease, checkout
 
+**Unresolvable Job**:
+A scheduled job whose job class or parameters class the current process cannot load from the type name stored with it. Being Unresolvable is a property of one Worker Instance at one moment, never of the job itself — a peer Worker Instance running a different build may load the very same job without trouble. This is why an Unresolvable Job is not treated as broken work.
+_Avoid_: broken job, orphan job, missing type
+
+**Resolution Grace**:
+The fixed window in which an Unresolvable Job stays available so that some Worker Instance able to load it can Claim it. The window opens the first time any Worker Instance finds the job Unresolvable, and it reopens from the start whenever the job is scheduled again under the same name. If the window closes while the job is still Unresolvable, the job is deleted, because no live build can run it.
+_Avoid_: TTL, expiry, retention, grace period
+
 ### Culture
 
 **Captured Culture**:

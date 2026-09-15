@@ -1,6 +1,9 @@
 # Spec — Defer unresolvable jobs instead of deleting them
 
-**Status:** ready-for-agent
+**Status:** wontfix
+**Spec:** `.agents/specs/resolution-grace-for-unresolvable-jobs.md`
+
+Superseded. This Idea deferred Unresolvable Jobs indefinitely, which stopped the data loss but left a row and a repeating warning for every job class anybody deletes. The Spec keeps the deferral and closes it with a five-minute Resolution Grace, after which the job is deleted. See `docs/adr/0005-unresolvable-jobs-are-deferred-then-deleted-on-a-clock.md`.
 
 Source: Bugsink [COMPLIANCE-6](https://bugsink.mvdm.io/issues/issue/d4406128-4da2-4e8a-b3c2-79d0ae0f7493/) (triaged 2026-08-10)
 
