@@ -95,11 +95,16 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
             ON CONFLICT (application_name, job_name) WHERE started_at IS NULL
             DO UPDATE SET
                 id = EXCLUDED.id,
+                job_type = EXCLUDED.job_type,
                 parameters_json = EXCLUDED.parameters_json,
+                parameters_type = EXCLUDED.parameters_type,
+                cron_expression = EXCLUDED.cron_expression,
+                job_group = EXCLUDED.job_group,
                 culture = EXCLUDED.culture,
                 ui_culture = EXCLUDED.ui_culture,
                 perform_at = EXCLUDED.perform_at,
-                attempt = 0
+                attempt = 0,
+                unresolvable_since = NULL
             """,
             new Dictionary<string, object?> {
                { "id", job.Id },

@@ -90,6 +90,40 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    }
 
    [Fact]
+   public async Task ScheduleJob_ShouldUpdateJobClass_WhenReschedulingOntoAnExistingPendingRow()
+   {
+      // Pre-existing bug, independent of Resolution Grace: job_type was never in the upsert's update list, so
+      // pointing an existing job name at a different job class silently kept running the old class. Also proves
+      // parameters_type, cron_expression and job_group all take the new schedule's values.
+      var originalJob = JobStoreItemFactory.MakeTestJob(jobName: "RepointedJob", performAt: Clock.UtcNow.Subtract(TimeSpan.FromDays(1)));
+      await Storage.ScheduleJobAsync(originalJob, CancellationToken);
+
+      var newJob = new JobStoreItem {
+         JobType = typeof(CompletedTestJob),
+         Parameters = new CompletedTestJob.Parameters(),
+         Options = new JobScheduleOptions { JobName = "RepointedJob", Group = "NewGroup" },
+         PerformAt = Clock.UtcNow,
+         CronExpression = Cronos.CronExpression.Parse("0 0 * * *")
+      };
+
+      // Act
+      await Storage.ScheduleJobAsync(newJob, CancellationToken);
+
+      // Assert - one pending row, carrying the new class, parameters class, CRON expression and group.
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().HaveCount(1);
+      jobs[0].JobType.Should().Be(typeof(CompletedTestJob).AssemblyQualifiedName);
+      jobs[0].ParametersType.Should().Be(typeof(CompletedTestJob.Parameters).AssemblyQualifiedName);
+      jobs[0].JobGroup.Should().Be("NewGroup");
+      jobs[0].CronExpression.Should().Be("0 0 * * *");
+
+      // ...and the job that then runs is the new class.
+      var claimedJob = await Storage.WaitForNextJobAsync(CancellationToken);
+      claimedJob.Should().NotBeNull();
+      claimedJob!.JobType.Should().Be(typeof(CompletedTestJob));
+   }
+
+   [Fact]
    public async Task WaitForNextJob_ShouldReturnNull_WhenNoJobsAvailable()
    {
       // Act

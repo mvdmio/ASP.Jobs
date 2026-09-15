@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
@@ -396,6 +397,41 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
       jobs[0].StartedBy.Should().BeNull();
       jobs[0].UnresolvableSince.Should().NotBeNull();
       jobs[0].UnresolvableSince!.Value.Should().BeCloseTo(Clock.UtcNow, TimeSpan.FromSeconds(1));
+   }
+
+   [Fact]
+   public async Task ScheduleJob_ReopensTheResolutionGraceWindow_WhenReschedulingAJobNameThatCarriesAStamp()
+   {
+      // A pending row stamped by an earlier Unresolvable episode (e.g. an old instance briefly could not load
+      // the class before this job name was scheduled again) must not keep that stamp: re-scheduling a job name
+      // reopens Resolution Grace from the start, so the fresh schedule cannot be deleted because of an old
+      // stamp. This also covers the pre-existing job-class bug (see Spec "The scheduling upsert"): the new
+      // schedule's class is the one that then runs, not the stale Unresolvable one.
+      await InsertUnresolvableJobAsync("RepointedJob", Clock.UtcNow.Subtract(TimeSpan.FromMinutes(1)), unresolvableSince: Clock.UtcNow.Subtract(TimeSpan.FromMinutes(1)));
+
+      var newJob = new JobStoreItem {
+         JobType = typeof(CompletedTestJob),
+         Parameters = new CompletedTestJob.Parameters(),
+         Options = new JobScheduleOptions { JobName = "RepointedJob" },
+         PerformAt = Clock.UtcNow
+      };
+
+      // Act
+      await Storage.ScheduleJobAsync(newJob, CancellationToken);
+
+      // Assert - one pending row for the name, stamp cleared, new class stored.
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().ContainSingle();
+      jobs[0].JobName.Should().Be("RepointedJob");
+      jobs[0].UnresolvableSince.Should().BeNull();
+      jobs[0].JobType.Should().Be(typeof(CompletedTestJob).AssemblyQualifiedName);
+
+      // ...and the job that runs is the new, resolvable class - not deferred, not deleted.
+      var claimedJob = await Storage.WaitForNextJobAsync(CancellationToken);
+      claimedJob.Should().NotBeNull();
+      claimedJob!.JobType.Should().Be(typeof(CompletedTestJob));
+
+      GetJobsFromDatabase().Should().ContainSingle();
    }
 
    [Fact]
