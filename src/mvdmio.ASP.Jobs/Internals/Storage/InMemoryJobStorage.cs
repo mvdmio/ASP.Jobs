@@ -217,23 +217,33 @@ internal sealed class InMemoryJobStorage : IJobStorage
 
    private async Task SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(DateTime now, CancellationToken ct)
    {
+      TimeSpan? timeUntilNextPerformAt;
+      TaskCompletionSource<object?> currentWake;
+
       await _jobQueueLock.WaitAsync(ct);
-      List<JobStoreItem> candidates;
       try
       {
-         candidates = _scheduledJobs.Values.Where(x => x.PerformAt > now).ToList();
+         // Capture the waiter under the same lock SendWakeSignal runs under, and re-check for a
+         // claimable job before sleeping. Otherwise a wake that lands between WaitForNextJobAsync's
+         // empty check and this await (e.g. a zero-delay group retry freeing the group) is lost and
+         // the producer parks forever.
+         currentWake = _wakeWaiters;
+
+         var dueClaimableExists = _scheduledJobs.Values.Any(x =>
+            x.PerformAt <= now && (x.Options.Group is null || !GroupsInProgress.Contains(x.Options.Group!)));
+         if (dueClaimableExists)
+            return;
+
+         var candidates = _scheduledJobs.Values.Where(x => x.PerformAt > now).ToList();
+         timeUntilNextPerformAt = candidates.Count > 0 ? candidates.Min(x => x.PerformAt) - now : null;
+         if (timeUntilNextPerformAt.HasValue && timeUntilNextPerformAt.Value <= TimeSpan.Zero)
+            return;
       }
       finally
       {
          _jobQueueLock.Release();
       }
-      
-      TimeSpan? timeUntilNextPerformAt = candidates.Count > 0 ? candidates.Min(x => x.PerformAt) - now : null;
-      if (timeUntilNextPerformAt.HasValue && timeUntilNextPerformAt.Value <= TimeSpan.Zero)
-         return;
 
-      // Await signal or timeout
-      var currentWake = _wakeWaiters;
       if (timeUntilNextPerformAt.HasValue)
       {
          var delayTask = Task.Delay(timeUntilNextPerformAt.Value, ct);

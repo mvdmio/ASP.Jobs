@@ -1,6 +1,6 @@
 # 02 — Captured Culture survives PostgreSQL
 
-Status: pending
+Status: done
 Blocked by: 01
 
 ## What to build
@@ -28,8 +28,16 @@ Projects: mvdmio.ASP.Jobs, mvdmio.ASP.Jobs.Tests.Unit, mvdmio.ASP.Jobs.Tests.Int
 
 ## Acceptance criteria
 
-- [ ] `JobData` round-trips a specific pair of culture names, the invariant pair (empty string), and null.
-- [ ] Scheduling with an explicit culture and reading the job back through PostgreSQL returns both stored names.
-- [ ] Scheduling with differing ambient formatting and UI cultures persists both values independently through PostgreSQL.
-- [ ] Existing rows with null columns remain valid (no Captured Culture) after the migration.
-- [ ] `dotnet test` is green for the unit and integration projects.
+- [x] `JobData` round-trips a specific pair of culture names, the invariant pair (empty string), and null.
+- [x] Scheduling with an explicit culture and reading the job back through PostgreSQL returns both stored names.
+- [x] Scheduling with differing ambient formatting and UI cultures persists both values independently through PostgreSQL.
+- [x] Existing rows with null columns remain valid (no Captured Culture) after the migration.
+- [x] `dotnet test` is green for the unit and integration projects.
+
+## Outcome
+
+Postgres culture persistence was already on the branch (`_202607051200_AddCulture`, `JobData` mapping, insert/claim/read SQL). This step closed the remaining acceptance gap and made the whole suite green.
+
+- Added `PostgresCultureTests.RowsWithNullCultureColumns_RemainValidWithNoCapturedCulture` — inserts omitting `culture`/`ui_culture` and asserts both names come back null via `GetScheduledJobsAsync`.
+- Fixed a lost-wake race in `InMemoryJobStorage.SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt`: capture `_wakeWaiters` under `_jobQueueLock` and re-check for a due claimable job before sleeping. Without that, a zero-delay group retry could free the group between the empty check and the await, parking `WaitForNextJobAsync` forever. That showed up as `JobRunnerRetryTests.Group_KeepsFlowing_WhileOneMemberRetries` timing out when run in parallel with `JobCulturePropagationTests`.
+- Footprint otherwise matched the code; no second culture migration. Whole suite green (unit + integration).

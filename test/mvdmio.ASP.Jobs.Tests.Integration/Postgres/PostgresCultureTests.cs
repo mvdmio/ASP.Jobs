@@ -5,6 +5,9 @@ using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
+using mvdmio.Database.PgSQL;
+using mvdmio.Database.PgSQL.Dapper.QueryParameters;
+using NpgsqlTypes;
 using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Integration.Postgres;
@@ -16,6 +19,7 @@ public sealed class PostgresCultureTests : IAsyncLifetime
 {
    private readonly PostgresFixture _fixture;
    private readonly PostgresStorageHarness _harness;
+   private readonly DatabaseConnection _db;
    private readonly ServiceProvider _services;
    private readonly JobScheduler _scheduler;
 
@@ -27,6 +31,7 @@ public sealed class PostgresCultureTests : IAsyncLifetime
    {
       _fixture = fixture;
       _harness = new PostgresStorageHarness(fixture);
+      _db = fixture.DatabaseConnection;
 
       var services = new ServiceCollection();
       services.RegisterJob<CultureRecordingJob>();
@@ -80,5 +85,32 @@ public sealed class PostgresCultureTests : IAsyncLifetime
          CultureInfo.CurrentCulture = originalCulture;
          CultureInfo.CurrentUICulture = originalUICulture;
       }
+   }
+
+   [Fact]
+   public async Task RowsWithNullCultureColumns_RemainValidWithNoCapturedCulture()
+   {
+      // Arrange - omit culture/ui_culture so they stay NULL, as for rows written before culture capture.
+      await _db.Dapper.ExecuteAsync(
+         """
+         INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at)
+         VALUES (:id, :job_type, :parameters_json, :parameters_type, NULL, :application_name, :job_name, NULL, :perform_at)
+         """,
+         new Dictionary<string, object?> {
+            { "id", Guid.NewGuid() },
+            { "job_type", typeof(CultureRecordingJob).AssemblyQualifiedName },
+            { "parameters_json", new TypedQueryParameter("{}", NpgsqlDbType.Jsonb) },
+            { "parameters_type", typeof(CultureRecordingJob.Parameters).AssemblyQualifiedName },
+            { "application_name", _harness.Configuration.ApplicationName },
+            { "job_name", "pre-feature-job" },
+            { "perform_at", _harness.Clock.UtcNow }
+         },
+         ct: CancellationToken
+      );
+
+      // Assert - null columns map to no Captured Culture (distinct from empty-string invariant).
+      var stored = (await Storage.GetScheduledJobsAsync(CancellationToken)).Single();
+      stored.CultureName.Should().BeNull();
+      stored.UICultureName.Should().BeNull();
    }
 }
