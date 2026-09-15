@@ -73,7 +73,8 @@ The Postgres storage Claim loop changes as follows.
 - After a successful Claim, the instance tries to load the job class and the parameters class, as it does today.
 - **Both load, and the row carries no stamp:** unchanged. The job runs.
 - **Both load, and the row carries a stamp:** the instance clears `unresolvable_since` on that row, then runs the job. This is not an optimisation; see "A stale stamp is never trusted" below.
-- **Either fails to load, and the row carries no stamp or a stamp newer than five minutes:** the instance defers the job. It releases the Claim and writes the stamp in one statement, adds the job id to its skip list, logs at Debug, and continues the wait loop looking for another job.
+- **Either fails to load, and the row carries no stamp or a stamp newer than five minutes:** the instance defers the job. It releases the Claim and writes the stamp in one statement, adds the job id to its skip list, sends the same `jobs_updated` notification every other write in this storage sends, logs at Debug, and continues the wait loop looking for another job.
+- The notification on a deferral is what serves story 3: a peer instance already asleep on the queue wakes at once and Claims the job, rather than waiting out its own poll interval. The skip list entry is recorded **before** the notification is sent, because by then the row is already unclaimed and stamped, and an instance that failed to record the skip would re-Claim and re-defer the same job on its very next pass - the tight loop the skip list exists to prevent.
 - **Either fails to load, and the row carries a stamp five minutes old or older:** the instance deletes the row, logs one warning, and continues the wait loop.
 
 The deferral statement clears `started_at` and `started_by`, sets `unresolvable_since` to the storage clock's current time only when it is currently null, and leaves `perform_at` alone. Leaving the scheduled time alone is the point: the job stays exactly where it was in the queue, so an instance that can run it takes it with no added delay.
@@ -91,6 +92,7 @@ The deferral statement clears `started_at` and `started_by`, sets `unresolvable_
 - The entry expiring is what causes the deletion. Once it expires, the instance Claims the job again, confirms it still cannot load the class, finds the stamp now old enough, and deletes. So the skip expiry and the Resolution Grace are deliberately the same five minutes.
 - The set lives and dies with the process. A restarted instance simply Claims the job again; if the stamp is already old enough it deletes on the spot, and if it is not, it defers as before. Nothing about correctness depends on the set surviving.
 - Entries are removed when they expire, and when their job is deleted, so the set cannot grow without bound.
+- The query that decides how long the wait loop sleeps excludes the skip list too. Skipped rows are still pending and still due, so without the exclusion the "next due time" would be a time already past for the whole window and the loop would spin hot. With it, the wait is bounded by whichever comes first: the next non-skipped job coming due, or the earliest skip entry lapsing - at which point its job is eligible for this instance's Claim query again. This is the second and last query this design changes.
 
 ### A stale stamp is never trusted
 

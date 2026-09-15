@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -13,7 +12,6 @@ using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Utils;
 using mvdmio.Database.PgSQL;
 using mvdmio.Database.PgSQL.Dapper.QueryParameters;
-using mvdmio.Database.PgSQL.Exceptions;
 using mvdmio.Database.PgSQL.Migrations;
 using Npgsql;
 using NpgsqlTypes;
@@ -38,12 +36,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    private readonly ILogger<PostgresJobStorage> _logger;
    private readonly IClock _clock;
 
-   // Job ids this instance recently found Unresolvable, mapped to the storage-clock time their skip entry expires.
-   // Excluded from this instance's own Claim query so it does not re-Claim the same job in a tight loop; a peer
-   // instance is unaffected and can Claim the job immediately. Entries are dropped once they expire, so this
-   // cannot grow without bound. Lives and dies with the process - nothing about correctness depends on it
-   // surviving a restart.
-   private readonly ConcurrentDictionary<Guid, DateTime> _unresolvableJobSkipList = new();
+   private readonly UnresolvableJobSkipList _unresolvableJobSkipList = new();
 
    private readonly SemaphoreSlim _initializationLock = new(1, 1);
 
@@ -137,8 +130,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          {
             var now = _clock.UtcNow;
 
-            PurgeExpiredSkipListEntries(now);
-            var skippedJobIds = _unresolvableJobSkipList.Keys.ToArray();
+            _unresolvableJobSkipList.PurgeExpired(now);
+            var skippedJobIds = _unresolvableJobSkipList.JobIds;
 
             var selectedJob = await Db.Dapper.QueryFirstOrDefaultAsync<JobData>(
                """
@@ -223,55 +216,34 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    {
       ThrowIfNotInitialized();
 
-      try
-      {
-         var updatedId = await Db.Dapper.QueryFirstOrDefaultAsync<Guid?>(
-            """
-            UPDATE mvdmio.jobs
-            SET perform_at = :perform_at,
-                attempt = attempt + 1,
-                started_at = NULL,
-                started_by = NULL,
-                unresolvable_since = NULL
-            WHERE id = :id
-              AND application_name = :application_name
-              AND NOT EXISTS (
-                 SELECT 1
-                 FROM mvdmio.jobs other
-                 WHERE other.application_name = :application_name
-                   AND other.job_name = :job_name
-                   AND other.started_at IS NULL
-                   AND other.id <> :id
-              )
-            RETURNING id
-            """,
-            new Dictionary<string, object?> {
-               { "id", job.JobId },
-               { "perform_at", nextAttemptAtUtc },
-               { "application_name", Configuration.ApplicationName },
-               { "job_name", job.Options.JobName }
-            },
-            ct: ct
-         );
+      var release = await GuardedClaimRelease.TryReleaseAsync(
+         Db,
+         """
+         perform_at = :perform_at,
+         attempt = attempt + 1,
+         started_at = NULL,
+         started_by = NULL,
+         unresolvable_since = NULL
+         """,
+         job.JobId,
+         Configuration.ApplicationName,
+         job.Options.JobName,
+         new Dictionary<string, object?> {
+            { "perform_at", nextAttemptAtUtc }
+         },
+         ct
+      );
 
-         if (updatedId is null)
-         {
-            // A different pending job with the same name already exists - the chain is superseded.
-            await SupersedeRetryAsync(job, "a newer pending job of the same name", null, ct);
-            return false;
-         }
-
-         await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
-         return true;
-      }
-      catch (QueryException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg)
+      if (release.Superseded)
       {
-         // A same-name job was inserted concurrently between our NOT EXISTS check and the UPDATE commit - treat as supersession.
-         // Db.Dapper wraps the driver exception in a QueryException, so the PostgresException is unwrapped from InnerException.
-         await SupersedeRetryAsync(job, "a concurrently-scheduled job of the same name", pg, ct);
+         await SupersedeRetryAsync(job, release.SupersededByDescription, release.Conflict, ct);
          return false;
       }
+
+      await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
+      return true;
    }
+
 
    private async Task SupersedeRetryAsync(JobStoreItem job, string supersededByDescription, PostgresException? exception, CancellationToken ct)
    {
@@ -363,64 +335,43 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    ///    not Claimed again by this instance until the window lapses. A peer instance running a build that can load
    ///    the type is unaffected and Claims the job immediately, since <c>perform_at</c> is left untouched.
    ///    <para>
-   ///    The release carries the same <c>NOT EXISTS</c> guard <see cref="TryScheduleRetryAsync"/> uses: if another
-   ///    pending row already holds the same application name and job name - the rolling-deploy shape, where a new
-   ///    instance re-enqueues at boot while an old instance still holds the Claim - releasing would put two pending
-   ///    rows under one name, which the partial unique index forbids. In that case the Claimed row is superseded
-   ///    (deleted) instead of released, leaving the newer pending row untouched.
+   ///    The release goes through <see cref="GuardedClaimRelease"/>, so it carries the same guard the retry
+   ///    reschedule uses: if another pending row already holds the same application name and job name - the
+   ///    rolling-deploy shape, where a new instance re-enqueues at boot while an old instance still holds the Claim -
+   ///    releasing would put two pending rows under one name, which the partial unique index forbids. In that case
+   ///    the Claimed row is superseded (deleted) instead of released, leaving the newer pending row untouched.
    ///    </para>
    /// </summary>
    private async Task DeferUnresolvableJobAsync(JobData job, DateTime now, CancellationToken ct)
    {
-      Guid? updatedId;
+      var release = await GuardedClaimRelease.TryReleaseAsync(
+         Db,
+         """
+         started_at = NULL,
+         started_by = NULL,
+         unresolvable_since = COALESCE(unresolvable_since, :now)
+         """,
+         job.Id,
+         Configuration.ApplicationName,
+         job.JobName,
+         new Dictionary<string, object?> {
+            { "now", now }
+         },
+         ct
+      );
 
-      try
+      if (release.Superseded)
       {
-         updatedId = await Db.Dapper.QueryFirstOrDefaultAsync<Guid?>(
-            """
-            UPDATE mvdmio.jobs
-            SET started_at = NULL,
-                started_by = NULL,
-                unresolvable_since = COALESCE(unresolvable_since, :now)
-            WHERE id = :id
-              AND NOT EXISTS (
-                 SELECT 1
-                 FROM mvdmio.jobs other
-                 WHERE other.application_name = :application_name
-                   AND other.job_name = :job_name
-                   AND other.started_at IS NULL
-                   AND other.id <> :id
-              )
-            RETURNING id
-            """,
-            new Dictionary<string, object?> {
-               { "id", job.Id },
-               { "now", now },
-               { "application_name", job.ApplicationName },
-               { "job_name", job.JobName }
-            },
-            ct: ct
-         );
-      }
-      catch (QueryException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } pg)
-      {
-         // A same-name job was inserted concurrently between our NOT EXISTS check and the UPDATE commit - treat as
-         // supersession. Db.Dapper wraps the driver exception in a QueryException, so the PostgresException is
-         // unwrapped from InnerException, exactly as TryScheduleRetryAsync does.
-         await SupersedeUnresolvableJobAsync(job, "a concurrently-scheduled job of the same name", pg, ct);
+         await SupersedeUnresolvableJobAsync(job, release.SupersededByDescription, release.Conflict, ct);
          return;
       }
 
-      if (updatedId is null)
-      {
-         // A different pending job with the same name already exists - the Claimed row is superseded.
-         await SupersedeUnresolvableJobAsync(job, "a newer pending job of the same name", null, ct);
-         return;
-      }
+      // Record the skip before announcing the release. The row is already unclaimed and stamped at this point, so
+      // an instance that failed to record the skip - because the NOTIFY threw - would re-Claim and re-defer the
+      // same job on its very next pass, which is the tight loop the skip list exists to prevent.
+      _unresolvableJobSkipList.Add(job.Id, now.Add(ResolutionGrace));
 
       await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
-
-      _unresolvableJobSkipList[job.Id] = now.Add(ResolutionGrace);
 
       _logger.LogDebug(
          "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded in this process. Deferring for the Resolution Grace window.",
@@ -439,10 +390,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    /// </summary>
    private async Task DeleteExpiredUnresolvableJobAsync(JobData job, DateTime now, CancellationToken ct)
    {
-      await DeleteJobByIdAsync(job.Id, ct);
-
-      // The job is gone - drop its skip-list entry (if any) so the set cannot grow without bound.
-      _unresolvableJobSkipList.TryRemove(job.Id, out _);
+      await DeleteUnresolvableJobAsync(job.Id, ct);
 
       _logger.LogWarning(
          "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded in this process for {UnloadableDuration}, past the Resolution Grace window. The row was deleted.",
@@ -469,14 +417,22 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          UPDATE mvdmio.jobs
          SET unresolvable_since = NULL
          WHERE id = :id
+           AND application_name = :application_name
          """,
          new Dictionary<string, object?> {
-            { "id", jobId }
+            { "id", jobId },
+            { "application_name", Configuration.ApplicationName }
          },
          ct: ct
       );
    }
 
+   /// <summary>
+   ///    Drops the Claim on an Unresolvable Job whose release was refused because another pending row already holds
+   ///    its application name and job name. That other row is the newer schedule and carries the same work, so the
+   ///    Claimed row is deleted rather than released, leaving one pending row per job name and letting the newer
+   ///    schedule win. Logs at Information, matching what the retry path already does for the same situation.
+   /// </summary>
    private async Task SupersedeUnresolvableJobAsync(JobData job, string supersededByDescription, PostgresException? exception, CancellationToken ct)
    {
       _logger.LogInformation(
@@ -487,23 +443,17 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          supersededByDescription
       );
 
-      await DeleteJobByIdAsync(job.Id, ct);
-
-      // The job is gone - drop its skip-list entry (if any) so the set cannot grow without bound.
-      _unresolvableJobSkipList.TryRemove(job.Id, out _);
+      await DeleteUnresolvableJobAsync(job.Id, ct);
    }
 
    /// <summary>
-   ///    Drops skip-list entries whose Resolution Grace window has lapsed, so the set cannot grow without bound
-   ///    and an expired job becomes eligible for this instance's own Claim query again.
+   ///    Deletes an Unresolvable Job's row and drops its skip-list entry, so the set cannot hold an id whose job no
+   ///    longer exists and cannot grow without bound.
    /// </summary>
-   private void PurgeExpiredSkipListEntries(DateTime now)
+   private async Task DeleteUnresolvableJobAsync(Guid jobId, CancellationToken ct)
    {
-      foreach (var (jobId, expiresAt) in _unresolvableJobSkipList)
-      {
-         if (expiresAt <= now)
-            _unresolvableJobSkipList.TryRemove(jobId, out _);
-      }
+      await DeleteJobByIdAsync(jobId, ct);
+      _unresolvableJobSkipList.Remove(jobId);
    }
 
    private async Task SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(DateTime now, CancellationToken ct)
@@ -516,7 +466,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
            AND NOT (id = ANY(:skipped_job_ids))
          """,
          new Dictionary<string, object?> {
-            { "skipped_job_ids", _unresolvableJobSkipList.Keys.ToArray() }
+            { "skipped_job_ids", _unresolvableJobSkipList.JobIds }
          },
          ct: ct
       );
@@ -526,7 +476,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       // (which would otherwise spin this loop hot). Instead, bound the wait by whichever comes
       // first: the next non-skipped job coming due, or the earliest skip entry lapsing - at which
       // point its job becomes eligible for this instance's own Claim query again.
-      var earliestSkipListExpiry = _unresolvableJobSkipList.IsEmpty ? (DateTime?)null : _unresolvableJobSkipList.Values.Min();
+      var earliestSkipListExpiry = _unresolvableJobSkipList.EarliestExpiry;
 
       var nextWakeAt = minPerformAt;
       if (earliestSkipListExpiry.HasValue && (nextWakeAt is null || earliestSkipListExpiry.Value < nextWakeAt.Value))

@@ -83,11 +83,11 @@ internal sealed class JobData
    public int Attempt { get; init; }
 
    /// <summary>
-   ///    Gets or sets the UTC time at which a Worker Instance first found this job Unresolvable (its job type or
+   ///    Gets the UTC time at which a Worker Instance first found this job Unresolvable (its job type or
    ///    parameters type could not be loaded in that process), or null if it has never been found Unresolvable.
    ///    Opens the Resolution Grace window.
    /// </summary>
-   public DateTime? UnresolvableSince { get; set; }
+   public DateTime? UnresolvableSince { get; init; }
 
    /// <summary>
    ///    Creates a <see cref="JobData"/> instance from a <see cref="JobStoreItem"/>.
