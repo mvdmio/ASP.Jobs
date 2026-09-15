@@ -1,6 +1,6 @@
 # 01 — Defer an Unresolvable Job instead of deleting it
 
-Status: pending
+Status: done
 Blocked by: none
 
 ## What to build
@@ -46,3 +46,30 @@ Projects: `src/mvdmio.ASP.Jobs`, `test/mvdmio.ASP.Jobs.Tests.Unit`, `test/mvdmio
 - [ ] `GetScheduledJobsAsync` and `GetInProgressJobsAsync` still skip rows they cannot load and leave every one of them in the table.
 - [ ] The phrase "the type no longer exists" appears nowhere in `src/`.
 - [ ] `dotnet build`, then `dotnet test`, run sequentially, are green.
+
+## Outcome
+
+Built as specified, with the Claim-path decision table narrowed to this step's scope: on a failed load the row is *always* deferred (never deleted) - deletion after the window closes is step 03's work, so there is no "stamp is already stale" branch here yet. An instance that re-Claims after its own skip entry lapses just defers again, per the step's own framing.
+
+- **Migration** `_202609151200_AddUnresolvableSince` adds nullable `unresolvable_since TIMESTAMPTZ` to `mvdmio.jobs`. No index, no backfill.
+- **`JobData.UnresolvableSince`** (`DateTime?`, settable) added; wired into the Claim `RETURNING` list and both listing `SELECT`s. Not added to the `ScheduleJobsAsync` INSERT/`ON CONFLICT DO UPDATE` list - reopening the window on re-schedule is step 05's job, out of scope here.
+- **`PostgresJobStorage`**: added a `ResolutionGrace = TimeSpan.FromMinutes(5)` constant and a `ConcurrentDictionary<Guid, DateTime> _unresolvableJobSkipList` (job id -> the storage-clock time its entry expires), used only by this instance. The Claim query's inner `SELECT` gained `AND NOT (id = ANY(:skipped_job_ids))`; everything else in that query (ordering, due filter, `FOR UPDATE SKIP LOCKED`) is unchanged.
+  - On a failed load: new `DeferUnresolvableJobAsync` runs one `UPDATE` that clears `started_at`/`started_by` and sets `unresolvable_since = COALESCE(unresolvable_since, :now)` (so a stamp is written once and never overwritten), issues `NOTIFY jobs_updated` (this is what wakes a peer sitting in `Db.WaitAsync` - the Spec doesn't say this explicitly but the loop already relies on the same notification channel for every other state change, and User Story 3 requires it), adds the job id to the skip list with an expiry of `now + ResolutionGrace`, and logs at Debug. The loop then `continue`s.
+  - `PurgeExpiredSkipListEntries(now)` runs at the top of every loop iteration (using the storage clock, not wall time) so expired entries stop being excluded and the set cannot grow without bound.
+  - `SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt` now excludes skip-listed ids from its "next due" query (otherwise it would see a due-in-the-past row and spin for the whole window) and additionally bounds the wait by the earliest skip-list expiry, so an instance with nothing else to do sleeps rather than busy-polling and still wakes exactly when a deferred job becomes eligible for it again. This "not spinning" behavior is called out in the Step file as this step's own reading of a Spec silence, not literal Spec text.
+- **Wording**: "the type no longer exists" is gone from `src/` (grep-verified) - replaced with "could not be loaded in this process" in the Debug defer log, the listing warning in `FilterResolvableJobs`, and the `IJobStorage.DeleteJobByIdAsync` doc comment.
+- Listing helpers (`GetScheduledJobsAsync`, `GetInProgressJobsAsync`) are otherwise untouched: still skip unloadable rows, still never delete.
+
+### Drift from the footprint map
+
+- The footprint's file list for `PostgresJobStorage.cs` named `FilterResolvableJobs` as a place carrying "the skip-list field and the five-minute constant" - in the actual implementation the skip list field and `ResolutionGrace` constant live at class level (used by `WaitForNextJobAsync`, `DeferUnresolvableJobAsync`, `PurgeExpiredSkipListEntries`, and `SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt`); `FilterResolvableJobs` itself only needed its log wording changed, since it has no Claim/skip-list concern (it never claims or defers, only reads and skips already-fetched rows). No behavioral gap, just where the pieces landed.
+- Added two small private helpers not named in the footprint: `DeferUnresolvableJobAsync` (replaces the old inline delete-on-failed-load branch) and `PurgeExpiredSkipListEntries`. Both are private implementation details of `PostgresJobStorage`.
+
+### Testing
+
+New file `test/mvdmio.ASP.Jobs.Tests.Integration/Postgres/PostgresUnresolvableJobTests.cs`, driven the same way as `PostgresStorageTests.cs`: Unresolvable rows written via raw SQL through `PostgresFixture.DatabaseConnection` (a bogus assembly-qualified type name that can never resolve), resolvable rows through the storage, time moved via `PostgresStorageHarness.Clock`. Covers: resolvable-behind-unresolvable returns the resolvable job and leaves the unresolvable row pending/due/unclaimed with `perform_at`/`attempt` untouched and a fresh stamp; no re-Claim within the window on a second call; the stamp survives a second defer once this instance's own skip entry has expired past the window; only-Unresolvable-due-rows returns null on cancellation without deleting anything; deferring raises `jobs_updated` (asserted via a direct `LISTEN`/`WaitAsync` on the fixture's own connection, started before the deferring call to avoid missing the `NOTIFY`); both listing methods keep skipping and keep the rows; and a legacy-row regression test mirroring the existing `attempt` column one, confirming `unresolvable_since` reads back null when omitted. Log message text is not asserted per the Spec's Testing Decisions (harness uses a null logger factory).
+
+### Verification
+
+`dotnet build` (whole solution): green, 0 errors, only pre-existing warnings (`NU1903` SSH.NET advisory, one `CS0618` obsolete-constructor warning, and xUnit1051 style warnings in a file this step didn't touch).
+`dotnet test` run sequentially per project: Unit `72/72` passed; Integration `68/68` passed (Docker/Testcontainers, includes the 7 new tests).

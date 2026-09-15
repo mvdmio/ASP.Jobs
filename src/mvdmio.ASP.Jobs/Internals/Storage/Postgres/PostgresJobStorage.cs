@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -25,11 +26,24 @@ namespace mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 /// </summary>
 internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDisposable
 {
+   /// <summary>
+   ///    The Resolution Grace window: how long a Worker Instance skips a job it just found Unresolvable before
+   ///    trying it again. Also how long this instance's skip-list entry for that job lives.
+   /// </summary>
+   private static readonly TimeSpan ResolutionGrace = TimeSpan.FromMinutes(5);
+
    private readonly DatabaseConnectionFactory _dbConnectionFactory;
    private readonly IOptions<PostgresJobStorageConfiguration> _configuration;
    private readonly ILoggerFactory _loggerFactory;
    private readonly ILogger<PostgresJobStorage> _logger;
    private readonly IClock _clock;
+
+   // Job ids this instance recently found Unresolvable, mapped to the storage-clock time their skip entry expires.
+   // Excluded from this instance's own Claim query so it does not re-Claim the same job in a tight loop; a peer
+   // instance is unaffected and can Claim the job immediately. Entries are dropped once they expire, so this
+   // cannot grow without bound. Lives and dies with the process - nothing about correctness depends on it
+   // surviving a restart.
+   private readonly ConcurrentDictionary<Guid, DateTime> _unresolvableJobSkipList = new();
 
    private readonly SemaphoreSlim _initializationLock = new(1, 1);
 
@@ -117,7 +131,10 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          while (!ct.IsCancellationRequested)
          {
             var now = _clock.UtcNow;
-         
+
+            PurgeExpiredSkipListEntries(now);
+            var skippedJobIds = _unresolvableJobSkipList.Keys.ToArray();
+
             var selectedJob = await Db.Dapper.QueryFirstOrDefaultAsync<JobData>(
                """
                UPDATE mvdmio.jobs
@@ -129,16 +146,18 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                   WHERE application_name = :application_name
                     AND perform_at <= :now
                     AND started_at IS NULL
+                    AND NOT (id = ANY(:skipped_job_ids))
                   ORDER BY perform_at, created_at
                   LIMIT 1
                   FOR UPDATE SKIP LOCKED
                )
-               RETURNING id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt
+               RETURNING id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt, unresolvable_since
                """,
                new Dictionary<string, object?> {
                   { "now", now },
                   { "instance_id", Configuration.InstanceId },
-                  { "application_name", Configuration.ApplicationName }
+                  { "application_name", Configuration.ApplicationName },
+                  { "skipped_job_ids", skippedJobIds }
                },
                ct: ct
             );
@@ -148,19 +167,10 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                var jobStoreItem = selectedJob.ToJobStoreItem();
                if (jobStoreItem is null)
                {
-                  // Job type could not be resolved - delete the job and log a warning
-                  await DeleteJobByIdAsync(selectedJob.Id, ct);
-                  
-                  _logger.LogWarning(
-                     "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded because the type no longer exists. The job has been deleted.",
-                     selectedJob.JobName,
-                     selectedJob.Id,
-                     selectedJob.JobType
-                  );
-
+                  await DeferUnresolvableJobAsync(selectedJob, now, ct);
                   continue;
                }
-               
+
                return jobStoreItem;
             }
 
@@ -263,14 +273,14 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
       var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt, unresolvable_since
          FROM mvdmio.jobs
          WHERE started_at IS NULL
          ORDER BY perform_at, created_at
          """,
          ct: ct
       );
-      
+
       return FilterResolvableJobs(jobData);
    }
 
@@ -280,14 +290,14 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
 
       var jobData = await Db.Dapper.QueryAsync<JobData>(
          """
-         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at, started_at, started_by, attempt, unresolvable_since
          FROM mvdmio.jobs
          WHERE started_at IS NOT NULL
          ORDER BY perform_at, created_at
          """,
          ct: ct
       );
-      
+
       return FilterResolvableJobs(jobData);
    }
 
@@ -319,12 +329,60 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          else
          {
             _logger.LogWarning(
-               "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded because the type no longer exists.",
+               "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded in this process.",
                job.JobName,
                job.Id,
                job.JobType
             );
          }
+      }
+   }
+
+   /// <summary>
+   ///    Releases the Claim on a job whose job type or parameters type could not be loaded in this process, opening
+   ///    (or preserving) its Resolution Grace window, and remembers the job in this instance's skip list so it is
+   ///    not Claimed again by this instance until the window lapses. A peer instance running a build that can load
+   ///    the type is unaffected and Claims the job immediately, since <c>perform_at</c> is left untouched.
+   /// </summary>
+   private async Task DeferUnresolvableJobAsync(JobData job, DateTime now, CancellationToken ct)
+   {
+      await Db.Dapper.ExecuteAsync(
+         """
+         UPDATE mvdmio.jobs
+         SET started_at = NULL,
+             started_by = NULL,
+             unresolvable_since = COALESCE(unresolvable_since, :now)
+         WHERE id = :id
+         """,
+         new Dictionary<string, object?> {
+            { "id", job.Id },
+            { "now", now }
+         },
+         ct: ct
+      );
+
+      await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
+
+      _unresolvableJobSkipList[job.Id] = now.Add(ResolutionGrace);
+
+      _logger.LogDebug(
+         "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded in this process. Deferring for the Resolution Grace window.",
+         job.JobName,
+         job.Id,
+         job.JobType
+      );
+   }
+
+   /// <summary>
+   ///    Drops skip-list entries whose Resolution Grace window has lapsed, so the set cannot grow without bound
+   ///    and an expired job becomes eligible for this instance's own Claim query again.
+   /// </summary>
+   private void PurgeExpiredSkipListEntries(DateTime now)
+   {
+      foreach (var (jobId, expiresAt) in _unresolvableJobSkipList)
+      {
+         if (expiresAt <= now)
+            _unresolvableJobSkipList.TryRemove(jobId, out _);
       }
    }
 
@@ -335,16 +393,31 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          SELECT MIN(perform_at)
          FROM mvdmio.jobs
          WHERE started_at IS NULL
+           AND NOT (id = ANY(:skipped_job_ids))
          """,
+         new Dictionary<string, object?> {
+            { "skipped_job_ids", _unresolvableJobSkipList.Keys.ToArray() }
+         },
          ct: ct
       );
-         
-      TimeSpan? timeUntilNextPerformAt = minPerformAt.HasValue ? minPerformAt.Value - now : null;
 
-      if (timeUntilNextPerformAt.HasValue && timeUntilNextPerformAt.Value <= TimeSpan.Zero)
+      // Rows in the skip list are still pending and due, so excluding them above stops the "next
+      // due time" query from returning a time in the past for the whole Resolution Grace window
+      // (which would otherwise spin this loop hot). Instead, bound the wait by whichever comes
+      // first: the next non-skipped job coming due, or the earliest skip entry lapsing - at which
+      // point its job becomes eligible for this instance's own Claim query again.
+      var earliestSkipListExpiry = _unresolvableJobSkipList.IsEmpty ? (DateTime?)null : _unresolvableJobSkipList.Values.Min();
+
+      var nextWakeAt = minPerformAt;
+      if (earliestSkipListExpiry.HasValue && (nextWakeAt is null || earliestSkipListExpiry.Value < nextWakeAt.Value))
+         nextWakeAt = earliestSkipListExpiry;
+
+      TimeSpan? timeUntilNextWake = nextWakeAt.HasValue ? nextWakeAt.Value - now : null;
+
+      if (timeUntilNextWake.HasValue && timeUntilNextWake.Value <= TimeSpan.Zero)
          return;
 
-      if (timeUntilNextPerformAt.HasValue)
+      if (timeUntilNextWake.HasValue)
       {
          // Use a linked cancellation token so that whichever branch loses the race in Task.WhenAny
          // is cancelled and releases its resources. Without this, Db.WaitAsync keeps a dedicated
@@ -353,7 +426,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          // max_connections with error 53300).
          using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-         var delayTask = Task.Delay(timeUntilNextPerformAt.Value, waitCts.Token);
+         var delayTask = Task.Delay(timeUntilNextWake.Value, waitCts.Token);
          var listenTask = Db.WaitAsync("jobs_updated", waitCts.Token);
 
          await Task.WhenAny(delayTask, listenTask);

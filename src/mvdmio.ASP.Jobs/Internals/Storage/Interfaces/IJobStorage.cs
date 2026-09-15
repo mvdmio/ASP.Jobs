@@ -83,7 +83,7 @@ internal interface IJobStorage
 
    /// <summary>
    ///    Deletes a job from storage by its unique identifier.
-   ///    This is used to remove jobs that can no longer be executed (e.g., when the job type no longer exists).
+   ///    This is used to remove jobs that can no longer be executed (e.g., when the job's type could not be loaded in this process).
    /// </summary>
    /// <param name="jobId">The unique identifier of the job to delete.</param>
    /// <param name="ct">A token to observe for cancellation requests.</param>
