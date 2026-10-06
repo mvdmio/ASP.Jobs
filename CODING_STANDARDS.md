@@ -1,37 +1,51 @@
-# Coding Conventions
+# Coding Standards
 
-## General
+## Design
 
-- Avoid speculative abstractions — add them when a second caller actually appears.
-- No backward-compat shims unless required by real consumers or persisted data. This library ships to NuGet, so treat the public API as a contract: preserve its shape unless the change is an intentional, called-out break.
-- Keep files under roughly 500 lines when practical (test files may exceed this).
+- Add an abstraction when its second caller appears.
+- Prefer explicit domain types over primitive bags; use `required` init properties where the project already does.
+- Keep files under roughly 500 lines when practical; test files may run longer.
 
-## Naming
+## Public API
 
-- **Private fields:** `_camelCase`.
-- **File-scoped namespaces** are used throughout.
+- The library ships to NuGet, so its public API is a contract: keep its shape, or make the break intentional and call it out.
+- Public surface: the types in the root `mvdmio.ASP.Jobs` namespace, plus `PostgresJobStorageConfiguration`. Every other type is `internal` and lives in `Internals/` or `Utils/`; test projects reach it through `InternalsVisibleTo`.
+- Document every public member with XML docs (`GenerateDocumentationFile` is on).
+- Change code in place. Add a backward-compat shim only for real consumers or persisted data.
 
-## Visibility
+## Domain language
 
-- **Public API is minimal** — only types in the root `mvdmio.ASP.Jobs` namespace are public, plus `PostgresJobStorageConfiguration`.
-- Non-public types live in `Internals/` and `Utils/` and are marked `internal`.
-- Test projects get access via `InternalsVisibleTo`.
+- Name domain concepts — in types, members, test names, Issue titles, proposals — with the terms `CONTEXT.md` defines; its _Avoid_ lines name the synonyms to replace.
+- A concept missing from `CONTEXT.md` is a signal: either the language is invented (reconsider it) or the glossary has a real gap (note it for `/grill-with-docs`).
+- When your work contradicts an ADR in `docs/adr/`, say so explicitly instead of overriding it:
 
-## Async / await
-
-- All public APIs that do I/O are async with `CancellationToken` support.
-- Use the `ct = default` pattern for optional cancellation tokens.
+  > _Contradicts ADR-0003 (retry is a storage reschedule) — but worth reopening because…_
 
 ## Code style
 
-- **Nullable reference types:** enabled — respect nullability annotations.
-- **Implicit usings:** disabled in the main project, enabled in test projects.
-- **XML documentation:** required on all public members (`GenerateDocumentationFile` is on).
-- **Access modifiers:** always explicit.
-- Prefer explicit domain types over primitive bags; use `required` init properties where the project already does.
-- Keep using directives minimal — remove duplicates and dead imports.
+- Write code that compiles for every target: the library builds for `net8.0`, `net9.0`, and `net10.0` (`LangVersion=latest`).
+- Nullable reference types are on; respect the annotations.
+- Implicit usings are off in `src/` (on in test projects): write each `using` the file needs, and only those.
+- Private fields: `_camelCase`. Namespaces: file-scoped.
+- Access modifiers: always explicit.
+
+## Async
+
+- Public APIs that do I/O are async and take a `CancellationToken`, optional as `ct = default`.
 
 ## Error handling
 
-- Never swallow exceptions silently.
-- Quote the real exception text when reporting/logging a failure.
+- Surface every caught exception: rethrow it, or log it with the exception object (`_logger.LogError(ex, …)`) so the real exception text survives.
+- Shutdown cancellation is the one deliberate exception: catch it with `when (ex is TaskCanceledException or OperationCanceledException)` and comment that it is expected.
+
+## Tests
+
+- xUnit v3 with `AwesomeAssertions`; unit tests mock with `NSubstitute`.
+- Build on the existing test utilities and fixtures (`.agents/refs/testing.md` lists them) before writing new helpers.
+- Test database code against real PostgreSQL through `Testcontainers.PostgreSql`.
+- A new storage backend gets integration tests built on the existing fixtures.
+
+## Postgres migrations
+
+- Add one class per schema change in `src/mvdmio.ASP.Jobs/Internals/Storage/Postgres/Migrations/`, implementing `IDbMigration` (the `mvdmio.Database.PgSQL.Migrations` framework).
+- Name the class and file `_YYYYMMDDHHMM_DescriptiveName`, set `Identifier` to the same timestamp, and implement `UpAsync`.

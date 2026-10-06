@@ -1,38 +1,23 @@
 # Testing
 
-Test stack: **xUnit v3** + **NSubstitute** (mocking) + **AwesomeAssertions** (fluent assertions).
+## Projects
 
-## Unit tests
-
-- Location: `test/mvdmio.ASP.Jobs.Tests.Unit/`
-- Mock dependencies with `NSubstitute`.
-- Assert with `AwesomeAssertions`.
-- Use `TestClock` for time-dependent tests and `TestJob` for controllable job behavior.
-
-## Integration tests
-
-- Location: `test/mvdmio.ASP.Jobs.Tests.Integration/`
-- Use `Testcontainers.PostgreSql` for database tests; **Docker must be running**.
-- Use `PostgresFixture` for the shared database container.
+- Unit: `test/mvdmio.ASP.Jobs.Tests.Unit/` — helpers in `Utils/`.
+- Integration: `test/mvdmio.ASP.Jobs.Tests.Integration/` — fixtures in `Fixtures/`.
+- Both target `net10.0` only.
 
 ## Test utilities
 
-| Utility | Purpose |
-|---------|---------|
-| `TestClock` | Controllable time for testing scheduled jobs |
-| `TestJob` | Job with configurable delay and exception behavior |
-| `JobTestServices` | Helper for setting up test DI containers |
-
-Reuse these utilities rather than rolling your own.
+| Utility | Project | Purpose |
+|---------|---------|---------|
+| `TestClock` | Unit | Controllable time for testing scheduled jobs |
+| `TestJob` | Unit | Job with configurable delay and exception behavior |
+| `JobTestServices` | Unit | Sets up test DI containers |
+| `PostgresFixture` | Integration | Shared PostgreSQL container for the whole assembly |
 
 ## Running tests
 
-- Whole solution: `dotnet test`
-- One project (prefer this while iterating — faster, no Docker for unit tests):
+- One project — the fastest loop; the unit project needs no Docker:
   `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj`
-- Single test by method-name substring:
-  `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~HandleCrash"`
-- By fully-qualified name (class/namespace substring):
-  `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~JobRunnerServiceTests"`
-- Use `--filter` aggressively; integration tests are slower and need Docker.
-- Never run build and test (or two test runs) in parallel — keep `dotnet` steps sequential to avoid file locks and deadlocks.
+- Narrow further by method or class substring:
+  `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~HandleCrash"` (or `~JobRunnerServiceTests`)

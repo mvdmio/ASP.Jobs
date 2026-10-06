@@ -28,3 +28,4 @@
 - **Pipeline:** `.github/workflows/publish-nuget.yml`
 - **Triggers:** push to `main` with changes under `src/**`, or manual dispatch.
 - **Actions:** build, test, publish to NuGet.org, create a GitHub release.
+- **Version:** `<Version>` in `src/mvdmio.ASP.Jobs/mvdmio.ASP.Jobs.csproj`; a version already on NuGet or already released is skipped.

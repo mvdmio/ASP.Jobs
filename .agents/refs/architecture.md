@@ -25,21 +25,27 @@ mvdmio.ASP.Jobs/
 └── README.md                            # Usage documentation
 ```
 
-## Job lifecycle
+## Jobs
 
-Jobs implement these lifecycle methods, called in order:
+A job derives from `Job<TParameters>` (or `Job`, for no parameters) and overrides `ExecuteAsync`. It is registered with `services.RegisterJob<TJob>()` and scheduled through `IJobScheduler`.
+
+Lifecycle hooks, in order:
 
 1. `OnJobScheduledAsync` — when the job is scheduled (preparation)
 2. `ExecuteAsync` — main execution logic
-3. `OnJobExecutedAsync` — after successful execution
-4. `OnJobFailedAsync` — on exception
+3. One of:
+   - `OnJobExecutedAsync` — after success
+   - `OnJobRetryAsync` — after a failure the job's `RetryPolicy` reschedules
+   - `OnJobFailedAsync` — after a failure with no retry left
 
-## Storage abstraction
+## Storage
 
 Two implementations behind `IJobStorage`:
 
 1. `InMemoryJobStorage` — default; non-persistent, single-instance
 2. `PostgresJobStorage` — distributed, persistent, multi-instance
+
+A backend implements `IJobStorage` and is selected by a `Use…Storage()` method on `JobConfigurationBuilder`.
 
 ## Key features
 
@@ -47,6 +53,7 @@ Two implementations behind `IJobStorage`:
 - **ASAP execution** — `PerformAsapAsync()`: queue for immediate processing
 - **Scheduled execution** — `PerformAtAsync()`: run at a specific UTC time
 - **CRON scheduling** — `PerformCronAsync()`: recurring jobs via CRON expressions
+- **Retries** — per-job `RetryPolicy`
 - **Job groups** — sequential execution within a group
 - **Job naming** — deduplication by name
 - **Concurrent execution** — configurable via `JobRunnerOptions.MaxConcurrentJobs`
