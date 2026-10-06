@@ -31,8 +31,8 @@ Reuse these utilities rather than rolling your own.
 - One project (prefer this while iterating — faster, no Docker for unit tests):
   `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj`
 - Single test by method-name substring:
-  `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "Name~SchedulesJobAtUtcTime"`
+  `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~HandleCrash"`
 - By fully-qualified name (class/namespace substring):
-  `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~JobScheduler"`
+  `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~JobRunnerServiceTests"`
 - Use `--filter` aggressively; integration tests are slower and need Docker.
 - Never run build and test (or two test runs) in parallel — keep `dotnet` steps sequential to avoid file locks and deadlocks.

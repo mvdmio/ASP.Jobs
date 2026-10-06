@@ -22,7 +22,7 @@ mvdmio.ASP.Jobs/
 │   ├── mvdmio.ASP.Jobs.Tests.Unit/          # Unit tests
 │   └── mvdmio.ASP.Jobs.Tests.Integration/   # Integration tests
 ├── .github/workflows/                   # CI/CD
-└── Readme.md                            # Usage documentation
+└── README.md                            # Usage documentation
 ```
 
 ## Job lifecycle
@@ -49,7 +49,7 @@ Two implementations behind `IJobStorage`:
 - **CRON scheduling** — `PerformCronAsync()`: recurring jobs via CRON expressions
 - **Job groups** — sequential execution within a group
 - **Job naming** — deduplication by name
-- **Multi-threaded execution** — configurable via `JobRunnerThreadsCount`
+- **Concurrent execution** — configurable via `JobRunnerOptions.MaxConcurrentJobs`
 - **OpenTelemetry tracing** — activity source `"mvdmio.ASP.Jobs"`
 
 ## Important files
@@ -61,4 +61,4 @@ Two implementations behind `IJobStorage`:
 | `src/mvdmio.ASP.Jobs/DependencyInjectionExtensions.cs` | DI registration |
 | `src/mvdmio.ASP.Jobs/JobConfigurationBuilder.cs` | Fluent configuration API |
 | `src/mvdmio.ASP.Jobs/Internals/JobRunnerService.cs` | Background job processor |
-| `src/mvdmio.ASP.Jobs/Internals/Storage/IJobStorage.cs` | Storage abstraction |
+| `src/mvdmio.ASP.Jobs/Internals/Storage/Interfaces/IJobStorage.cs` | Storage abstraction |

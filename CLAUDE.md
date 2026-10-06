@@ -14,14 +14,14 @@ Job scheduling library for ASP.NET Core — schedule and run background jobs wit
 
 - **Never branch.** This repo uses a single-branch workflow — when asked to commit/push, commit on the current branch (`main`) and push directly. Only create a branch when the user explicitly asks for one by name.
 - The main session is the orchestrator. Unless the task is trivial, delegate the actual work (explore, implement, test, review) to subagents using a model and reasoning level appropriate for the task.
-- Search early. Quote exact errors. If blocked or the design is unclear, ask.
+- Quote exact errors. If blocked or the design is unclear, ask.
 
 ## Reference docs
 
 Read the relevant file before working in that area:
 
 - [Architecture & layout](.agents/refs/architecture.md) — project structure, job lifecycle, storage, key files & features
-- [Coding conventions](.agents/refs/conventions.md) — naming, visibility, async, code style
+- [Coding conventions](CODING_STANDARDS.md) — naming, visibility, async, code style
 - [Testing](.agents/refs/testing.md) — unit & integration patterns, test utilities
 - [Common tasks](.agents/refs/common-tasks.md) — adding a job, a migration, or a storage backend
 - [Dependencies & CI/CD](.agents/refs/dependencies.md) — package list and publish pipeline
