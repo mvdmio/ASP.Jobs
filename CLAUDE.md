@@ -30,11 +30,7 @@ Read the relevant file before working in that area:
 
 ### Issue tracker
 
-Specs and issues live as markdown under `.agents/specs/` and `.agents/issues/`. See `.agents/refs/issue-tracker.md`.
-
-### Triage labels
-
-Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `.agents/refs/triage-labels.md`.
+Work is tracked as GitHub Issues in `mvdmio/ASP.Jobs`. See `.agents/refs/tracker.md`.
 
 ### Domain docs
 
