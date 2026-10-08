@@ -41,7 +41,8 @@ public interface IJobScheduler
    /// <summary>
    ///    Schedule multiple jobs to be performed as soon as possible.
    ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> runs once for each job, before anything is stored. The batch
-   ///    is stored completely or not at all: when any job in it fails to schedule, no job from it is stored.
+   ///    is stored completely or not at all: when a hook throws, the token is cancelled, or the storage write fails, no
+   ///    job from it is stored.
    /// </summary>
    /// <typeparam name="TJob">The type of job to execute.</typeparam>
    /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
@@ -81,7 +82,8 @@ public interface IJobScheduler
    /// <summary>
    ///    Schedule multiple jobs to be performed as soon as possible, each running under the given culture.
    ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> runs once for each job, before anything is stored. The batch
-   ///    is stored completely or not at all: when any job in it fails to schedule, no job from it is stored.
+   ///    is stored completely or not at all: when a hook throws, the token is cancelled, or the storage write fails, no
+   ///    job from it is stored.
    /// </summary>
    /// <typeparam name="TJob">The type of job to execute.</typeparam>
    /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
@@ -123,7 +125,8 @@ public interface IJobScheduler
    /// <summary>
    ///    Schedule multiple jobs to be performed at a given time.
    ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> runs once for each job, before anything is stored. The batch
-   ///    is stored completely or not at all: when any job in it fails to schedule, no job from it is stored.
+   ///    is stored completely or not at all: when a hook throws, the token is cancelled, or the storage write fails, no
+   ///    job from it is stored.
    /// </summary>
    /// <typeparam name="TJob">The type of job to execute.</typeparam>
    /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
@@ -166,7 +169,8 @@ public interface IJobScheduler
    /// <summary>
    ///    Schedule multiple jobs to be performed at a given time, each running under the given culture.
    ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> runs once for each job, before anything is stored. The batch
-   ///    is stored completely or not at all: when any job in it fails to schedule, no job from it is stored.
+   ///    is stored completely or not at all: when a hook throws, the token is cancelled, or the storage write fails, no
+   ///    job from it is stored.
    /// </summary>
    /// <typeparam name="TJob">The type of job to execute.</typeparam>
    /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>

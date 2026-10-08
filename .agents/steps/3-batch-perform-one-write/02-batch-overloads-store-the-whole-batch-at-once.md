@@ -1,6 +1,6 @@
 # 02 — Batch overloads store the whole batch at once
 
-Status: built
+Status: done
 Depends on: 01
 
 ## What to build
@@ -60,7 +60,7 @@ Projects: `src/mvdmio.ASP.Jobs/mvdmio.ASP.Jobs.csproj`, `test/mvdmio.ASP.Jobs.Te
 ## Outcome
 
 Safety fact: every batch `PerformAsapAsync` / `PerformAtAsync` overload runs all `OnJobScheduledAsync` hooks and checks cancellation before calling `IJobStorage.ScheduleJobsAsync` exactly once with the whole batch (skipped for an empty batch), so a hook veto, cancellation, or null item stores no job; if false, a fan-out is stored partly or wakes Postgres listeners once per job (rung 3)
-Proof: `dotnet test /data/projects/mvdmio/ASP.Jobs/.claude/worktrees/3-batch-perform-one-write/test/mvdmio.ASP.Jobs.Tests.Integration/mvdmio.ASP.Jobs.Tests.Integration.csproj --filter "FullyQualifiedName~JobSchedulerTests"` exit 0 — 35 passed on both storages, incl. `PerformAsap_Batch_RaisesExactlyOneJobsUpdatedNotification`, `PerformAsap_Batch_StoresNoJob_WhenOnJobScheduledAsyncThrowsForOneJob`, `PerformAsap_Batch_StoresNoJob_WhenCancelledFromTheFirstJobsOnJobScheduledAsync`; transcript in `02-batch-overloads.txt` in the Proof folder
+Proof: `dotnet test /data/projects/mvdmio/ASP.Jobs/.claude/worktrees/3-batch-perform-one-write/test/mvdmio.ASP.Jobs.Tests.Integration/mvdmio.ASP.Jobs.Tests.Integration.csproj --filter "FullyQualifiedName~JobSchedulerTests"` exit 0 — `Passed!  - Failed:     0, Passed:    37` on both storages, incl. `PerformAsap_Batch_RaisesExactlyOneJobsUpdatedNotification` and the hook-veto, cancellation and null-item batch cases; transcript in `02-batch-overloads-checker.txt` in the Proof folder
 Merge risk: hard — the 4.8.0 `<Version>` bump publishes to NuGet once pushed to `main`, and a published package stays after a revert; before the push, reverting the commit restores the per-job loop. Affects every caller of the four batch overloads (now all-or-nothing, one storage call)
 
 Notes:
@@ -69,4 +69,5 @@ Notes:
 - The overloads stay `async`, so argument exceptions still surface through the returned Task, as before.
 - `TestJob.Parameters.OnJobScheduledCallback` is an `Action?` marked `[JsonIgnore]`; the new `OnJobScheduledAsync` override adds nothing to `HookCallOrder`.
 - `CHANGELOG.md` untouched, per the run's instructions.
-
+- Checker added `PerformAt_Batch_StoresNoJob_WhenOnJobScheduledAsyncThrowsForOneJob` and a no-hook-ran check to the null-item case; the four `IJobScheduler` batch docs now name the failure triggers (hook throws, cancellation, storage write fails).
+- Whole suite green after the Checker's fixes: unit 81 passed, integration 107 passed (`02-full-suite-checker.txt` in the Proof folder).

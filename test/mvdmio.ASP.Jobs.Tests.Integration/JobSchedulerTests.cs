@@ -246,6 +246,23 @@ public abstract class JobSchedulerTests
    }
 
    [Fact]
+   public async Task PerformAt_Batch_StoresNoJob_WhenOnJobScheduledAsyncThrowsForOneJob()
+   {
+      // Arrange
+      var parameters = new[] {
+         new TestJob.Parameters(),
+         new TestJob.Parameters { ThrowInOnJobScheduledAsync = new InvalidOperationException("Hook veto") }
+      };
+
+      // Act
+      var action = () => _scheduler.PerformAtAsync<TestJob, TestJob.Parameters>(_clock.UtcNow.AddMinutes(5), parameters, CancellationToken);
+
+      // Assert
+      await action.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("Hook veto");
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().BeEmpty();
+   }
+
+   [Fact]
    public async Task PerformAsap_Batch_StoresNoJob_WhenCancelledFromTheFirstJobsOnJobScheduledAsync()
    {
       // Arrange
@@ -277,13 +294,15 @@ public abstract class JobSchedulerTests
    public async Task PerformAsap_BatchWithNullItem_ThrowsAndStoresNothing()
    {
       // Arrange
-      var parameters = new[] { new TestJob.Parameters(), null! };
+      var hookRan = false;
+      var parameters = new[] { new TestJob.Parameters { OnJobScheduledCallback = () => hookRan = true }, null! };
 
       // Act
       var action = () => _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
 
       // Assert
       await action.Should().ThrowExactlyAsync<ArgumentNullException>();
+      hookRan.Should().BeFalse();
       (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().BeEmpty();
    }
 

@@ -246,8 +246,8 @@ internal sealed class JobScheduler : IJobScheduler
    /// </summary>
    /// <param name="parameters">The parameters, one for each job to schedule.</param>
    /// <param name="performAtUtc">The UTC time to run the jobs at, or <c>null</c> to run them as soon as possible.</param>
-   /// <param name="cultureName">The Captured Culture for every job in the batch.</param>
-   /// <param name="uiCultureName">The captured UI culture for every job in the batch.</param>
+   /// <param name="cultureName">The formatting culture name of the batch's Captured Culture.</param>
+   /// <param name="uiCultureName">The UI culture name of the batch's Captured Culture.</param>
    /// <param name="ct">A token to observe for cancellation requests.</param>
    private async Task ScheduleBatchAsync<TJob, TParameters>(IEnumerable<TParameters> parameters, DateTime? performAtUtc, string cultureName, string uiCultureName, CancellationToken ct)
       where TJob : Job<TParameters>
