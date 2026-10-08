@@ -84,6 +84,25 @@ public class InMemoryJobStorageTests
    }
 
    [Fact]
+   public async Task ScheduleJobs_DoesNotWakeAWaiter_WhenTheBatchIsEmpty()
+   {
+      // Arrange
+      // The waiter parks until the job's perform_at. Moving the clock past it sends no wake signal, so only a wake
+      // makes the waiter re-check and claim the job before the test token ends its wait.
+      var futureJob = await AddNewJobStoreItem(performAt: _clock.UtcNow.AddMinutes(1));
+      var waiter = _sut.WaitForNextJobAsync(CancellationToken);
+      _clock.UtcNow = _clock.UtcNow.AddMinutes(2);
+
+      // Act
+      await _sut.ScheduleJobsAsync([], CancellationToken);
+
+      // Assert
+      var result = await waiter;
+      result.Should().BeNull();
+      _sut.ScheduledJobs.Should().ContainSingle().Which.Should().Be(futureJob);
+   }
+
+   [Fact]
    public async Task RemoveJob_ShouldRemoveJob_WhenExists()
    {
       // Arrange
