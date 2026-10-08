@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-08: Batch scheduling stores jobs together
+Scheduling a list of jobs with `PerformAsapAsync` or `PerformAtAsync` now stores the whole list in one database write and wakes listening workers once, instead of once per job. A batch is now all-or-nothing: when any job in it fails to schedule, for example because its `OnJobScheduledAsync` hook throws, no job from that batch is stored, where before the jobs ahead of the failure stayed scheduled. Each job still runs its own scheduling hook and keeps its own name, culture and run time.
+
 ## 2026-09-15: Jobs keep the scheduling culture
 
 ASAP and timed jobs now run under the culture of the thread that scheduled them, instead of the runner thread's ambient culture. Recurring CRON jobs now run under the invariant culture by default. You can pass an explicit culture when scheduling, and a job that schedules further jobs hands that culture down automatically.
