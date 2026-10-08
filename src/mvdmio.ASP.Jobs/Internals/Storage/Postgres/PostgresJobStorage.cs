@@ -118,11 +118,11 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
             { "job_types", rows.Select(x => x.JobType).ToArray() },
             { "parameters_json", new TypedQueryParameter(rows.Select(x => x.ParametersJson).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Jsonb) },
             { "parameters_types", rows.Select(x => x.ParametersType).ToArray() },
-            { "cron_expressions", new TypedQueryParameter(rows.Select(x => x.CronExpression).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Text) },
+            { "cron_expressions", rows.Select(x => x.CronExpression).ToArray() },
             { "job_names", rows.Select(x => x.JobName).ToArray() },
-            { "job_groups", new TypedQueryParameter(rows.Select(x => x.JobGroup).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Text) },
-            { "cultures", new TypedQueryParameter(rows.Select(x => x.Culture).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Text) },
-            { "ui_cultures", new TypedQueryParameter(rows.Select(x => x.UICulture).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Text) },
+            { "job_groups", rows.Select(x => x.JobGroup).ToArray() },
+            { "cultures", rows.Select(x => x.Culture).ToArray() },
+            { "ui_cultures", rows.Select(x => x.UICulture).ToArray() },
             { "perform_ats", rows.Select(x => x.PerformAt).ToArray() }
          },
          ct: ct

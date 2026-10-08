@@ -140,13 +140,18 @@ internal sealed class JobScheduler : IJobScheduler
             ct
          );
 
-         Log.Information("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         LogScheduledAsap<TJob>(parameters);
       }
       catch (Exception e)
       {
          Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
          throw;
       }
+   }
+
+   private static void LogScheduledAsap<TJob>(object parameters)
+   {
+      Log.Information("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
    }
 
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken ct = default)
@@ -231,13 +236,18 @@ internal sealed class JobScheduler : IJobScheduler
             ct
          );
 
-         Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, parameters, performAtUtc);
+         LogScheduledAt<TJob>(parameters, performAtUtc);
       }
       catch (Exception e)
       {
          Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
          throw;
       }
+   }
+
+   private static void LogScheduledAt<TJob>(object parameters, DateTime performAtUtc)
+   {
+      Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, parameters, performAtUtc);
    }
 
    /// <summary>
@@ -288,7 +298,8 @@ internal sealed class JobScheduler : IJobScheduler
          ct.ThrowIfCancellationRequested();
          await _jobStorage.ScheduleJobsAsync(items, ct);
       }
-      catch (Exception e)
+      // A cancellation the caller asked for is not a failure, so it propagates without an error log.
+      catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
       {
          Log.Error(e, "Error while scheduling a batch of {Count} jobs: {JobType}", parameterList.Count, typeof(TJob).Name);
          throw;
@@ -297,9 +308,9 @@ internal sealed class JobScheduler : IJobScheduler
       foreach (var parameter in parameterList)
       {
          if (performAtUtc is null)
-            Log.Information("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameter);
+            LogScheduledAsap<TJob>(parameter);
          else
-            Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, parameter, performAtUtc.Value);
+            LogScheduledAt<TJob>(parameter, performAtUtc.Value);
       }
    }
 

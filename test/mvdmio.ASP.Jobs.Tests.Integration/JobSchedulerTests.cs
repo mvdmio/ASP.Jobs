@@ -301,7 +301,7 @@ public abstract class JobSchedulerTests
       var action = () => _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
 
       // Assert
-      await action.Should().ThrowExactlyAsync<ArgumentNullException>();
+      await action.Should().ThrowExactlyAsync<ArgumentNullException>().WithParameterName("parameters");
       hookRan.Should().BeFalse();
       (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().BeEmpty();
    }
