@@ -60,6 +60,30 @@ public class InMemoryJobStorageTests
    }
 
    [Fact]
+   public async Task ScheduleJobs_KeepsTheLastItem_WhenTwoItemsShareAJobName()
+   {
+      // Arrange
+      var firstItem = JobStoreItemFactory.MakeTestJob(jobName: "SharedName", performAt: _clock.UtcNow.AddMinutes(1));
+      var lastItem = JobStoreItemFactory.MakeTestJob(jobName: "SharedName", performAt: _clock.UtcNow.AddMinutes(2));
+
+      // Act
+      await _sut.ScheduleJobsAsync([firstItem, lastItem], CancellationToken);
+
+      // Assert
+      _sut.ScheduledJobs.Should().ContainSingle().Which.Should().Be(lastItem);
+   }
+
+   [Fact]
+   public async Task ScheduleJobs_StoresNothing_WhenTheBatchIsEmpty()
+   {
+      // Act
+      await _sut.ScheduleJobsAsync([], CancellationToken);
+
+      // Assert
+      _sut.ScheduledJobs.Should().BeEmpty();
+   }
+
+   [Fact]
    public async Task RemoveJob_ShouldRemoveJob_WhenExists()
    {
       // Arrange

@@ -30,7 +30,8 @@ internal interface IJobStorage
    Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default);
 
    /// <summary>
-   ///    Schedules multiple jobs for execution.
+   ///    Schedules multiple jobs for execution in one write: either every item is stored or none is. When two items
+   ///    share a job name, the last one wins. An empty batch stores nothing and wakes no waiter.
    /// </summary>
    /// <param name="items">The job items to schedule.</param>
    /// <param name="ct">A token to observe for cancellation requests.</param>

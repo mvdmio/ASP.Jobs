@@ -77,46 +77,56 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    {
       ThrowIfNotInitialized();
 
-      var jobData = items.Select(x => JobData.FromJobStoreItem(Configuration.ApplicationName, x));
+      // Convert every item before touching the database, so a conversion failure stores nothing.
+      var jobData = items.Select(x => JobData.FromJobStoreItem(Configuration.ApplicationName, x)).ToList();
+      if (jobData.Count == 0)
+         return;
 
-      foreach (var job in jobData)
-      {
-         await Db.Dapper.ExecuteAsync(
-            """
-            INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at)
-            VALUES (:id, :job_type, :parameters_json, :parameters_type, :cron_expression, :application_name, :job_name, :job_group, :culture, :ui_culture, :perform_at)
-            ON CONFLICT (application_name, job_name) WHERE started_at IS NULL
-            DO UPDATE SET
-                id = EXCLUDED.id,
-                job_type = EXCLUDED.job_type,
-                parameters_json = EXCLUDED.parameters_json,
-                parameters_type = EXCLUDED.parameters_type,
-                cron_expression = EXCLUDED.cron_expression,
-                job_group = EXCLUDED.job_group,
-                culture = EXCLUDED.culture,
-                ui_culture = EXCLUDED.ui_culture,
-                perform_at = EXCLUDED.perform_at,
-                attempt = 0,
-                unresolvable_since = NULL
-            """,
-            new Dictionary<string, object?> {
-               { "id", job.Id },
-               { "job_type", job.JobType },
-               { "parameters_json", new TypedQueryParameter(job.ParametersJson, NpgsqlDbType.Jsonb ) },
-               { "parameters_type", job.ParametersType },
-               { "cron_expression", job.CronExpression },
-               { "application_name", job.ApplicationName },
-               { "job_name", job.JobName },
-               { "job_group", job.JobGroup },
-               { "culture", job.Culture },
-               { "ui_culture", job.UICulture },
-               { "perform_at", job.PerformAt },
-               { "instance_id", Configuration.InstanceId }
-            },
-            ct: ct
-         );
-      }
-      
+      // One statement cannot upsert the same row twice ("ON CONFLICT DO UPDATE command cannot affect row a second
+      // time"), so keep only the last item per job name - the same outcome InMemoryJobStorage gets by keying on it.
+      var rows = jobData
+         .GroupBy(x => x.JobName)
+         .Select(x => x.Last())
+         .ToList();
+
+      // One array parameter per column, expanded with unnest, keeps the bind-parameter count fixed whatever the
+      // batch size. One statement is atomic, so the batch is stored completely or not at all.
+      await Db.Dapper.ExecuteAsync(
+         """
+         INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at)
+         SELECT id, job_type, parameters_json, parameters_type, cron_expression, :application_name, job_name, job_group, culture, ui_culture, perform_at
+         FROM unnest(:ids, :job_types, :parameters_json, :parameters_types, :cron_expressions, :job_names, :job_groups, :cultures, :ui_cultures, :perform_ats)
+            AS batch (id, job_type, parameters_json, parameters_type, cron_expression, job_name, job_group, culture, ui_culture, perform_at)
+         ON CONFLICT (application_name, job_name) WHERE started_at IS NULL
+         DO UPDATE SET
+             id = EXCLUDED.id,
+             job_type = EXCLUDED.job_type,
+             parameters_json = EXCLUDED.parameters_json,
+             parameters_type = EXCLUDED.parameters_type,
+             cron_expression = EXCLUDED.cron_expression,
+             job_group = EXCLUDED.job_group,
+             culture = EXCLUDED.culture,
+             ui_culture = EXCLUDED.ui_culture,
+             perform_at = EXCLUDED.perform_at,
+             attempt = 0,
+             unresolvable_since = NULL
+         """,
+         new Dictionary<string, object?> {
+            { "application_name", Configuration.ApplicationName },
+            { "ids", rows.Select(x => x.Id).ToArray() },
+            { "job_types", rows.Select(x => x.JobType).ToArray() },
+            { "parameters_json", new TypedQueryParameter(rows.Select(x => x.ParametersJson).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Jsonb) },
+            { "parameters_types", rows.Select(x => x.ParametersType).ToArray() },
+            { "cron_expressions", new TypedQueryParameter(rows.Select(x => x.CronExpression).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Text) },
+            { "job_names", rows.Select(x => x.JobName).ToArray() },
+            { "job_groups", new TypedQueryParameter(rows.Select(x => x.JobGroup).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Text) },
+            { "cultures", new TypedQueryParameter(rows.Select(x => x.Culture).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Text) },
+            { "ui_cultures", new TypedQueryParameter(rows.Select(x => x.UICulture).ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Text) },
+            { "perform_ats", rows.Select(x => x.PerformAt).ToArray() }
+         },
+         ct: ct
+      );
+
       await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
    }
 

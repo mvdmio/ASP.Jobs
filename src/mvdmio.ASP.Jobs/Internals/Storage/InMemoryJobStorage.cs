@@ -63,11 +63,15 @@ internal sealed class InMemoryJobStorage : IJobStorage
 
    public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
    {
+      var itemList = items.ToList();
+      if (itemList.Count == 0)
+         return;
+
       await _jobQueueLock.WaitAsync(ct);
 
       try
       {
-         foreach (var item in items)
+         foreach (var item in itemList)
          {
             _scheduledJobs[item.Options.JobName] = item;
          }

@@ -124,6 +124,170 @@ public sealed class PostgresStorageTests : IAsyncLifetime
    }
 
    [Fact]
+   public async Task ScheduleJobs_StoresEveryItem()
+   {
+      // Arrange
+      var items = new[] {
+         JobStoreItemFactory.MakeTestJob(performAt: Clock.UtcNow),
+         JobStoreItemFactory.MakeTestJob(jobName: "NamedJob", group: "SomeGroup", performAt: Clock.UtcNow.AddMinutes(1)),
+         JobStoreItemFactory.MakeTestJob(performAt: Clock.UtcNow.AddHours(1), parameters: new TestJob.Parameters { Delay = TimeSpan.FromSeconds(3) })
+      };
+
+      // Act
+      await Storage.ScheduleJobsAsync(items, CancellationToken);
+
+      // Assert
+      GetJobsFromDatabase().Select(x => x.ToJobStoreItem()).Should().BeEquivalentTo(items);
+   }
+
+   [Fact]
+   public async Task ScheduleJobs_UpsertsOntoAnExistingPendingRow_AndClearsItsUnresolvableStamp()
+   {
+      // Arrange - a pending row with the same name, stamped Unresolvable and carrying a leftover attempt count.
+      var existingJob = JobStoreItemFactory.MakeTestJob(jobName: "ExistingJob", performAt: Clock.UtcNow.Subtract(TimeSpan.FromDays(1)));
+      await Storage.ScheduleJobAsync(existingJob, CancellationToken);
+
+      await _db.Dapper.ExecuteAsync(
+         "UPDATE mvdmio.jobs SET unresolvable_since = :stamp, attempt = 3 WHERE id = :id",
+         new Dictionary<string, object?> {
+            { "stamp", Clock.UtcNow.Subtract(TimeSpan.FromMinutes(1)) },
+            { "id", existingJob.JobId }
+         },
+         ct: CancellationToken
+      );
+
+      var newJob = JobStoreItemFactory.MakeTestJob(
+         jobName: "ExistingJob",
+         group: "NewGroup",
+         performAt: Clock.UtcNow,
+         parameters: new TestJob.Parameters { Delay = TimeSpan.FromSeconds(7) }
+      );
+      var otherJob = JobStoreItemFactory.MakeTestJob(performAt: Clock.UtcNow);
+
+      // Act
+      await Storage.ScheduleJobsAsync([newJob, otherJob], CancellationToken);
+
+      // Assert
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().HaveCount(2);
+
+      var upserted = jobs.Single(x => x.JobName == "ExistingJob");
+      upserted.ToJobStoreItem().Should().BeEquivalentTo(newJob);
+      upserted.UnresolvableSince.Should().BeNull();
+      upserted.Attempt.Should().Be(0);
+   }
+
+   [Fact]
+   public async Task ScheduleJobs_KeepsTheLastItem_WhenTwoItemsShareAJobName()
+   {
+      // Arrange
+      var firstItem = JobStoreItemFactory.MakeTestJob(
+         jobName: "SharedName",
+         performAt: Clock.UtcNow.AddMinutes(1),
+         parameters: new TestJob.Parameters { Delay = TimeSpan.FromSeconds(1) }
+      );
+      var lastItem = JobStoreItemFactory.MakeTestJob(
+         jobName: "SharedName",
+         performAt: Clock.UtcNow.AddMinutes(2),
+         parameters: new TestJob.Parameters { Delay = TimeSpan.FromSeconds(2) }
+      );
+
+      // Act
+      await Storage.ScheduleJobsAsync([firstItem, lastItem], CancellationToken);
+
+      // Assert
+      var jobs = GetJobsFromDatabase();
+      jobs.Should().ContainSingle();
+      jobs[0].Id.Should().Be(lastItem.JobId);
+      jobs[0].ToJobStoreItem().Should().BeEquivalentTo(lastItem);
+   }
+
+   [Fact]
+   public async Task ScheduleJobs_StoresEveryRow_WhenTheBatchExceedsThePerStatementBindParameterLimit()
+   {
+      // 5,958 rows at 11 per-row parameters would be 65,538 bind parameters - over Postgres's limit of 65,535.
+      const int count = 6_000;
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+      cts.CancelAfter(TimeSpan.FromSeconds(30));
+
+      var items = Enumerable.Range(0, count)
+         .Select(_ => JobStoreItemFactory.MakeTestJob(performAt: Clock.UtcNow))
+         .ToList();
+
+      // Act
+      await Storage.ScheduleJobsAsync(items, cts.Token);
+
+      // Assert
+      var storedJobNames = _db.Dapper.Query<string>("SELECT job_name FROM mvdmio.jobs").ToHashSet();
+      storedJobNames.Should().HaveCount(count);
+      storedJobNames.SetEquals(items.Select(x => x.Options.JobName)).Should().BeTrue();
+   }
+
+   [Fact]
+   public async Task ScheduleJobs_StoresNothing_WhenOneItemCannotBeConverted()
+   {
+      // Arrange
+      var items = new[] {
+         JobStoreItemFactory.MakeTestJob(performAt: Clock.UtcNow),
+         JobStoreItemFactory.MakeTestJob(performAt: Clock.UtcNow, useNullParameters: true),
+         JobStoreItemFactory.MakeTestJob(performAt: Clock.UtcNow)
+      };
+
+      // Act
+      var act = () => Storage.ScheduleJobsAsync(items, CancellationToken);
+
+      // Assert
+      await act.Should().ThrowAsync<NullReferenceException>();
+      GetJobsFromDatabase().Should().BeEmpty();
+   }
+
+   [Fact]
+   public async Task ScheduleJobs_StoresNothing_WhenTheBatchIsEmpty()
+   {
+      // Act
+      await Storage.ScheduleJobsAsync([], CancellationToken);
+
+      // Assert
+      GetJobsFromDatabase().Should().BeEmpty();
+   }
+
+   [Fact]
+   public async Task ScheduleJobs_SendsExactlyOneNotification_ForABatchOfSeveralItems()
+   {
+      // Arrange
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+      cts.CancelAfter(TimeSpan.FromSeconds(5));
+      await using var listener = await JobsUpdatedListener.StartAsync(_fixture.ConnectionString, cts.Token);
+
+      var items = Enumerable.Range(0, 5)
+         .Select(_ => JobStoreItemFactory.MakeTestJob(performAt: Clock.UtcNow))
+         .ToList();
+
+      // Act
+      await Storage.ScheduleJobsAsync(items, cts.Token);
+
+      // Assert
+      var notifications = await listener.CountNotificationsAsync(TimeSpan.FromMilliseconds(500), cts.Token);
+      notifications.Should().Be(1);
+   }
+
+   [Fact]
+   public async Task ScheduleJobs_SendsNoNotification_ForAnEmptyBatch()
+   {
+      // Arrange
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+      cts.CancelAfter(TimeSpan.FromSeconds(5));
+      await using var listener = await JobsUpdatedListener.StartAsync(_fixture.ConnectionString, cts.Token);
+
+      // Act
+      await Storage.ScheduleJobsAsync([], cts.Token);
+
+      // Assert
+      var notifications = await listener.CountNotificationsAsync(TimeSpan.FromMilliseconds(500), cts.Token);
+      notifications.Should().Be(0);
+   }
+
+   [Fact]
    public async Task WaitForNextJob_ShouldReturnNull_WhenNoJobsAvailable()
    {
       // Act
