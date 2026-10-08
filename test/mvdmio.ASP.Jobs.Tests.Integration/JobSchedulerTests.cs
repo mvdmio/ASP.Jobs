@@ -1,3 +1,4 @@
+using System.Globalization;
 using AwesomeAssertions;
 using AwesomeAssertions.Equivalency;
 using Cronos;
@@ -54,6 +55,21 @@ public abstract class JobSchedulerTests
       }
 
       public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+      [Fact]
+      public async Task PerformAsap_Batch_RaisesExactlyOneJobsUpdatedNotification()
+      {
+         // Arrange
+         var parameters = DistinctParameters(3);
+         await using var listener = await JobsUpdatedListener.StartAsync(_fixture.ConnectionString, CancellationToken);
+
+         // Act
+         await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+
+         // Assert
+         var notifications = await listener.CountNotificationsAsync(TimeSpan.FromMilliseconds(500), CancellationToken);
+         notifications.Should().Be(1);
+      }
    }
 
    public sealed class InMemoryJobSchedulerTests : JobSchedulerTests
@@ -152,6 +168,126 @@ public abstract class JobSchedulerTests
    }
 
    [Fact]
+   public async Task PerformAsap_Batch_StoresEveryJobWithTheAmbientCultureCapturedBeforeTheCall()
+   {
+      // Arrange
+      var parameters = DistinctParameters(3);
+
+      // Act
+      using (new ThreadCultureScope("nl-NL", "fr-FR"))
+      {
+         await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+      }
+
+      // Assert
+      await AssertBatchScheduledAsync(parameters, _clock.UtcNow, "nl-NL", "fr-FR");
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithCulture_StoresEveryJobWithThatCulture()
+   {
+      // Arrange
+      var parameters = DistinctParameters(3);
+
+      // Act
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, new CultureInfo("de-DE"), CancellationToken);
+
+      // Assert
+      await AssertBatchScheduledAsync(parameters, _clock.UtcNow, "de-DE", "de-DE");
+   }
+
+   [Fact]
+   public async Task PerformAt_Batch_StoresEveryJobWithTheAmbientCultureCapturedBeforeTheCall()
+   {
+      // Arrange
+      var performAt = _clock.UtcNow.AddMinutes(5);
+      var parameters = DistinctParameters(3);
+
+      // Act
+      using (new ThreadCultureScope("nl-NL", "fr-FR"))
+      {
+         await _scheduler.PerformAtAsync<TestJob, TestJob.Parameters>(performAt, parameters, CancellationToken);
+      }
+
+      // Assert
+      await AssertBatchScheduledAsync(parameters, performAt, "nl-NL", "fr-FR");
+   }
+
+   [Fact]
+   public async Task PerformAt_BatchWithCulture_StoresEveryJobWithThatCulture()
+   {
+      // Arrange
+      var performAt = _clock.UtcNow.AddMinutes(5);
+      var parameters = DistinctParameters(3);
+
+      // Act
+      await _scheduler.PerformAtAsync<TestJob, TestJob.Parameters>(performAt, parameters, new CultureInfo("de-DE"), CancellationToken);
+
+      // Assert
+      await AssertBatchScheduledAsync(parameters, performAt, "de-DE", "de-DE");
+   }
+
+   [Fact]
+   public async Task PerformAsap_Batch_StoresNoJob_WhenOnJobScheduledAsyncThrowsForOneJob()
+   {
+      // Arrange
+      var parameters = new[] {
+         new TestJob.Parameters(),
+         new TestJob.Parameters { ThrowInOnJobScheduledAsync = new InvalidOperationException("Hook veto") },
+         new TestJob.Parameters()
+      };
+
+      // Act
+      var action = () => _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+
+      // Assert
+      await action.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("Hook veto");
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().BeEmpty();
+   }
+
+   [Fact]
+   public async Task PerformAsap_Batch_StoresNoJob_WhenCancelledFromTheFirstJobsOnJobScheduledAsync()
+   {
+      // Arrange
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
+      var parameters = new[] {
+         new TestJob.Parameters { OnJobScheduledCallback = () => cts.Cancel() },
+         new TestJob.Parameters()
+      };
+
+      // Act
+      var action = () => _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, cts.Token);
+
+      // Assert
+      await action.Should().ThrowAsync<OperationCanceledException>();
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().BeEmpty();
+   }
+
+   [Fact]
+   public async Task PerformAsap_EmptyBatch_StoresNothing()
+   {
+      // Act
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(Array.Empty<TestJob.Parameters>(), CancellationToken);
+
+      // Assert
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().BeEmpty();
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithNullItem_ThrowsAndStoresNothing()
+   {
+      // Arrange
+      var parameters = new[] { new TestJob.Parameters(), null! };
+
+      // Act
+      var action = () => _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+
+      // Assert
+      await action.Should().ThrowExactlyAsync<ArgumentNullException>();
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().BeEmpty();
+   }
+
+   [Fact]
    public async Task PerformCron_Once()
    {
       // Arrange
@@ -214,6 +350,27 @@ public abstract class JobSchedulerTests
          PerformAt = cron.GetNextOccurrence(_clock.UtcNow)!.Value,
          CronExpression = cron
       };
+
+   // Each item differs by its Delay, so the equivalency check pairs every stored job with its own parameters.
+   private static TestJob.Parameters[] DistinctParameters(int count) =>
+      Enumerable.Range(1, count).Select(i => new TestJob.Parameters { Delay = TimeSpan.FromSeconds(i) }).ToArray();
+
+   private async Task AssertBatchScheduledAsync(TestJob.Parameters[] parameters, DateTime expectedPerformAt, string expectedCulture, string expectedUICulture)
+   {
+      var expected = parameters.Select(x => new JobStoreItem {
+         JobType = typeof(TestJob),
+         Parameters = x,
+         Options = new JobScheduleOptions(),
+         PerformAt = expectedPerformAt,
+         CronExpression = null,
+         CultureName = expectedCulture,
+         UICultureName = expectedUICulture
+      });
+
+      var scheduledJobs = (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).ToArray();
+      scheduledJobs.Should().BeEquivalentTo(expected, config => config.Excluding(x => x.JobId).Excluding(x => x.Options.JobName));
+      scheduledJobs.Select(x => x.Options.JobName).Should().OnlyHaveUniqueItems();
+   }
 
    private Task AssertSingleScheduledJobAsync(
       object expectedParameters,

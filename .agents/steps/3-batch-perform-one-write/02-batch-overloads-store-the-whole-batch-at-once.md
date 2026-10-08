@@ -1,6 +1,6 @@
 # 02 — Batch overloads store the whole batch at once
 
-Status: pending
+Status: built
 Depends on: 01
 
 ## What to build
@@ -56,3 +56,17 @@ Projects: `src/mvdmio.ASP.Jobs/mvdmio.ASP.Jobs.csproj`, `test/mvdmio.ASP.Jobs.Te
 - [ ] Single-job `PerformAsapAsync` / `PerformAtAsync`, CRON scheduling, retries, and the culture propagation tests stay green unchanged.
 - [ ] `<Version>` in `src/mvdmio.ASP.Jobs/mvdmio.ASP.Jobs.csproj` is 4.8.0.
 - [ ] `dotnet build`, then `dotnet test`, pass for the whole solution, one `dotnet` process at a time (Docker running).
+
+## Outcome
+
+Safety fact: every batch `PerformAsapAsync` / `PerformAtAsync` overload runs all `OnJobScheduledAsync` hooks and checks cancellation before calling `IJobStorage.ScheduleJobsAsync` exactly once with the whole batch (skipped for an empty batch), so a hook veto, cancellation, or null item stores no job; if false, a fan-out is stored partly or wakes Postgres listeners once per job (rung 3)
+Proof: `dotnet test /data/projects/mvdmio/ASP.Jobs/.claude/worktrees/3-batch-perform-one-write/test/mvdmio.ASP.Jobs.Tests.Integration/mvdmio.ASP.Jobs.Tests.Integration.csproj --filter "FullyQualifiedName~JobSchedulerTests"` exit 0 — 35 passed on both storages, incl. `PerformAsap_Batch_RaisesExactlyOneJobsUpdatedNotification`, `PerformAsap_Batch_StoresNoJob_WhenOnJobScheduledAsyncThrowsForOneJob`, `PerformAsap_Batch_StoresNoJob_WhenCancelledFromTheFirstJobsOnJobScheduledAsync`; transcript in `02-batch-overloads.txt` in the Proof folder
+Merge risk: hard — the 4.8.0 `<Version>` bump publishes to NuGet once pushed to `main`, and a published package stays after a revert; before the push, reverting the commit restores the per-job loop. Affects every caller of the four batch overloads (now all-or-nothing, one storage call)
+
+Notes:
+
+- The four overloads share one private `JobScheduler.ScheduleBatchAsync(parameters, DateTime? performAtUtc, cultureName, uiCultureName, ct)`; `performAtUtc: null` means ASAP and reads `_clock.UtcNow` per job, as the single-job path does.
+- The overloads stay `async`, so argument exceptions still surface through the returned Task, as before.
+- `TestJob.Parameters.OnJobScheduledCallback` is an `Action?` marked `[JsonIgnore]`; the new `OnJobScheduledAsync` override adds nothing to `HookCallOrder`.
+- `CHANGELOG.md` untouched, per the run's instructions.
+

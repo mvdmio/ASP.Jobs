@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace mvdmio.ASP.Jobs.Tests.Unit.Utils;
 
 public class TestJob : Job<TestJob.Parameters>
@@ -29,6 +31,17 @@ public class TestJob : Job<TestJob.Parameters>
          throw properties.ThrowOnExecute;
 
       return properties;
+   }
+
+   // Records nothing in HookCallOrder: JobRunnerRetryTests asserts exact hook lists for jobs scheduled through the Scheduler.
+   public override Task OnJobScheduledAsync(Parameters parameters, CancellationToken cancellationToken)
+   {
+      parameters.OnJobScheduledCallback?.Invoke();
+
+      if (parameters.ThrowInOnJobScheduledAsync is not null)
+         throw parameters.ThrowInOnJobScheduledAsync;
+
+      return Task.CompletedTask;
    }
 
    public override Task OnJobExecutedAsync(Parameters parameters, CancellationToken cancellationToken)
@@ -91,6 +104,13 @@ public class TestJob : Job<TestJob.Parameters>
       public Exception? ThrowInOnJobExecutedAsync { get; set; }
       public Exception? ThrowInOnJobFailedAsync { get; set; }
       public Exception? ThrowInOnJobRetryAsync { get; set; }
+
+      /// <summary>When set, thrown from OnJobScheduledAsync after <see cref="OnJobScheduledCallback"/> runs, to verify the hook can veto scheduling.</summary>
+      public Exception? ThrowInOnJobScheduledAsync { get; set; }
+
+      /// <summary>Invoked from OnJobScheduledAsync, so a test can act at that point (e.g. cancel a token). Not serialised: storage cannot store a delegate.</summary>
+      [JsonIgnore]
+      public Action? OnJobScheduledCallback { get; set; }
 
       public List<RetryContext> RetryContexts { get; } = [];
       public List<string> HookCallOrder { get; } = [];
