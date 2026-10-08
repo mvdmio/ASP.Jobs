@@ -44,4 +44,14 @@ public sealed class InitializationGuardTests : IAsyncLifetime
       var afterInit = async () => await _harness.Storage.ScheduleJobAsync(job, TestContext.Current.CancellationToken);
       await afterInit.Should().NotThrowAsync();
    }
+
+   [Fact]
+   public async Task ScheduleJobs_ThrowsBeforeInitialization_EvenForAnEmptyBatch()
+   {
+      // Act
+      var act = async () => await _harness.Storage.ScheduleJobsAsync([], TestContext.Current.CancellationToken);
+
+      // Assert
+      await act.Should().ThrowAsync<JobStorageNotInitializedException>();
+   }
 }

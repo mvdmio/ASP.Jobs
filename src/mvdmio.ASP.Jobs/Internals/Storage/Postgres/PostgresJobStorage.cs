@@ -90,7 +90,8 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          .ToList();
 
       // One array parameter per column, expanded with unnest, keeps the bind-parameter count fixed whatever the
-      // batch size. One statement is atomic, so the batch is stored completely or not at all.
+      // batch size. One statement is atomic, so the batch is stored completely or not at all. The parameters
+      // array is typed jsonb[] explicitly: a string[] alone would bind as text[].
       await Db.Dapper.ExecuteAsync(
          """
          INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at)

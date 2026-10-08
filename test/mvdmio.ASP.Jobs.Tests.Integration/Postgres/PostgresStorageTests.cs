@@ -236,8 +236,8 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       // Act
       var act = () => Storage.ScheduleJobsAsync(items, CancellationToken);
 
-      // Assert
-      await act.Should().ThrowAsync<NullReferenceException>();
+      // Assert - the exception type is incidental; what matters is that no item from the call was stored.
+      await act.Should().ThrowAsync<Exception>();
       GetJobsFromDatabase().Should().BeEmpty();
    }
 

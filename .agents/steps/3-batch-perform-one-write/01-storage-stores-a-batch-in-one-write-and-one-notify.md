@@ -1,6 +1,6 @@
 # 01 — Storage stores a batch in one write and one NOTIFY
 
-Status: built
+Status: done
 Depends on: none
 
 ## What to build
@@ -60,8 +60,8 @@ Projects: `src/mvdmio.ASP.Jobs/mvdmio.ASP.Jobs.csproj`, `test/mvdmio.ASP.Jobs.Te
 
 ## Outcome
 
-Safety fact: Postgres `ScheduleJobsAsync` converts every item before touching the database, then stores the whole batch (deduplicated by job name, last wins) in one `INSERT … SELECT FROM unnest(...) ON CONFLICT … DO UPDATE` statement followed by one `NOTIFY jobs_updated`, and does nothing for an empty batch; if false, a batch is stored partly, fails on a duplicate name or past 65,535 bind parameters, or wakes listening Worker Instances more than once (rung 3)
-Proof: `dotnet test /data/projects/mvdmio/ASP.Jobs/.claude/worktrees/3-batch-perform-one-write/test/mvdmio.ASP.Jobs.Tests.Integration/mvdmio.ASP.Jobs.Tests.Integration.csproj --filter FullyQualifiedName~PostgresStorageTests.ScheduleJobs` exit 0 — 8 passed incl. `ScheduleJobs_SendsExactlyOneNotification_ForABatchOfSeveralItems`, `ScheduleJobs_StoresEveryRow_WhenTheBatchExceedsThePerStatementBindParameterLimit` (6,000 rows), `ScheduleJobs_StoresNothing_WhenOneItemCannotBeConverted`; transcript in `01-storage-batch.txt` in the Proof folder
+Safety fact: Postgres `ScheduleJobsAsync` checks the Initialization Guard first, converts every item before touching the database, then stores the whole batch (deduplicated by job name, last wins) in one `INSERT … SELECT FROM unnest(...) ON CONFLICT … DO UPDATE` statement followed by one `NOTIFY jobs_updated`, and does nothing for an empty batch; if false, a batch is stored partly, fails on a duplicate name or past 65,535 bind parameters, or wakes listening Worker Instances more than once or for nothing (rung 3)
+Proof: `dotnet test /data/projects/mvdmio/ASP.Jobs/.claude/worktrees/3-batch-perform-one-write/test/mvdmio.ASP.Jobs.Tests.Integration/mvdmio.ASP.Jobs.Tests.Integration.csproj --filter "FullyQualifiedName~PostgresStorageTests.ScheduleJobs|FullyQualifiedName~InitializationGuardTests"` exit 0 — 10 passed incl. `ScheduleJobs_SendsNoNotification_ForAnEmptyBatch`, `ScheduleJobs_StoresEveryRow_WhenTheBatchExceedsThePerStatementBindParameterLimit` (6,000 rows), `ScheduleJobs_StoresNothing_WhenOneItemCannotBeConverted`; transcript in `01-storage-batch-checker.txt` in the Proof folder
 Merge risk: easy — no schema change, no data rewrite; reverting the commit restores the per-row upsert loop; affects every Postgres scheduling path (single-job, CRON, batch) since `ScheduleJobAsync` delegates to the new statement
 
 Notes for step 02:
@@ -69,4 +69,6 @@ Notes for step 02:
 - `test/mvdmio.ASP.Jobs.Tests.Integration/Fixtures/JobsUpdatedListener.cs` counts `jobs_updated` notifications: `await using var l = await JobsUpdatedListener.StartAsync(fixture.ConnectionString, ct);` before the write, then `await l.CountNotificationsAsync(TimeSpan.FromMilliseconds(500), ct)` once afterwards (the window ends by cancelling the wait, so call it once per listener). Pass a token that outlives the window; the one-second shared tokens are too short when combined with other work.
 - `application_name` is bound as one scalar from configuration, not per row; the INSERT column list and `DO UPDATE` list are unchanged (the INSERT still does not write `attempt`, so a fresh row gets the column default 0).
 - `perform_at` is passed as an untyped `DateTime[]`, letting Npgsql infer the type as the single-row path did; `parameters_json` is typed `jsonb[]`, nullable text columns typed `text[]`.
+- `InitializationGuardTests.ScheduleJobs_ThrowsBeforeInitialization_EvenForAnEmptyBatch` pins the guard on an empty batch.
+- Keep every `perform_at` in a batch UTC, as the Scheduler already does: Npgsql infers the array type from `DateTime.Kind`, and a batch mixing kinds is untested.
 - In-memory `ScheduleJobsAsync` returns before taking the lock for an empty batch, so it neither waits on nor observes the cancellation token in that case.
