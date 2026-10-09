@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using AwesomeAssertions;
 using Cronos;
+using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using Xunit;
 
@@ -14,8 +15,6 @@ namespace mvdmio.ASP.Jobs.Tests.Unit;
 /// </summary>
 public sealed class JobRunnerTracingTests
 {
-   private const string _sourceName = "mvdmio.ASP.Jobs";
-
    private static readonly string _testJobType = typeof(TestJob).AssemblyQualifiedName!;
 
    private readonly JobRunnerHarness _harness = new();
@@ -70,7 +69,7 @@ public sealed class JobRunnerTracingTests
 
       // Act - drive the runner directly: a CRON chain always leaves its next occurrence scheduled, so a drain never ends.
       await _harness.Runner.StartAsync(CancellationToken);
-      await WaitUntilAsync(() => parameters.Executed, CancellationToken);
+      await JobRunnerHarness.WaitUntilAsync(() => parameters.Executed, CancellationToken);
       await _harness.Runner.StopAsync(CancellationToken);
 
       // Assert
@@ -109,7 +108,7 @@ public sealed class JobRunnerTracingTests
       var stopped = new ConcurrentQueue<Activity>();
       using var listener = RecordOwnStoppedSpans(stopped);
 
-      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, CancellationToken);
+      await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(parameters, new JobScheduleOptions { JobName = "exported-job" }, CancellationToken);
 
       // Act
       await _harness.RunAndDrainAsync(CancellationToken);
@@ -120,7 +119,7 @@ public sealed class JobRunnerTracingTests
       span.OperationName.Should().Be("Job: TestJob");
       span.Kind.Should().Be(ActivityKind.Internal);
       span.GetTagItem("job.type").Should().Be(_testJobType);
-      span.GetTagItem("job.name").Should().BeOfType<string>().Which.Should().NotBeEmpty();
+      span.GetTagItem("job.name").Should().Be("exported-job");
       span.GetTagItem("job.attempt").Should().Be(0);
       span.GetTagItem("job.group").Should().BeNull("a job with no group has no job.group tag");
       span.GetTagItem("job.cron").Should().BeNull("a job with no CRON expression has no job.cron tag");
@@ -155,7 +154,7 @@ public sealed class JobRunnerTracingTests
    private static ActivityListener ListenToOwnSpans(TestJob.Parameters parameters, ConcurrentQueue<OfferedSpan> offered, ActivitySamplingResult ownResult)
    {
       var listener = new ActivityListener {
-         ShouldListenTo = source => source.Name == _sourceName,
+         ShouldListenTo = source => source.Name == JobRunnerService.ActivitySourceName,
          Sample = (ref ActivityCreationOptions<ActivityContext> options) => {
             var tags = (options.Tags ?? []).ToDictionary(x => x.Key, x => x.Value);
 
@@ -174,21 +173,13 @@ public sealed class JobRunnerTracingTests
    private static ActivityListener RecordOwnStoppedSpans(ConcurrentQueue<Activity> stopped)
    {
       var listener = new ActivityListener {
-         ShouldListenTo = source => source.Name == _sourceName,
+         ShouldListenTo = source => source.Name == JobRunnerService.ActivitySourceName,
          Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
          ActivityStopped = stopped.Enqueue
       };
 
       ActivitySource.AddActivityListener(listener);
       return listener;
-   }
-
-   private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken ct)
-   {
-      while (!condition())
-      {
-         await Task.Delay(5, ct);
-      }
    }
 
    private sealed record OfferedSpan(string Name, ActivityKind Kind, Dictionary<string, object?> Tags);

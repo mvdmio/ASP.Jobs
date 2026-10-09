@@ -21,8 +21,11 @@ namespace mvdmio.ASP.Jobs.Internals;
 /// </summary>
 internal sealed class JobRunnerService : BackgroundService
 {
+   /// <summary>The name of the activity source that job spans start on.</summary>
+   internal const string ActivitySourceName = "mvdmio.ASP.Jobs";
+
    // OpenTelemetry tracing setup
-   private static readonly ActivitySource _openTelemetry = new("mvdmio.ASP.Jobs");
+   private static readonly ActivitySource _openTelemetry = new(ActivitySourceName);
 
    private static readonly TimeSpan _maxStorageErrorBackoff = TimeSpan.FromSeconds(30);
 
@@ -232,8 +235,11 @@ internal sealed class JobRunnerService : BackgroundService
       await using var scope = _services.CreateAsyncScope();
       var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
 
-      // OpenTelemetry tracing. The name and tags go in at start, so a sampler can decide by job type.
-      using var activity = _openTelemetry.StartActivity($"Job: {jobBusItem.JobType.Name}", ActivityKind.Internal, parentContext: default, tags: GetJobSpanTags(jobBusItem));
+      // OpenTelemetry tracing. The name and tags go in at start, so a sampler can decide by job type. Without a
+      // listener there is no span, so the name and tags are not built either.
+      using var activity = _openTelemetry.HasListeners()
+         ? _openTelemetry.StartActivity($"Job: {jobBusItem.JobType.Name}", ActivityKind.Internal, parentContext: default, tags: GetJobSpanTags(jobBusItem))
+         : null;
 
       Exception? executionException = null;
       var wasCanceled = false;
@@ -322,8 +328,7 @@ internal sealed class JobRunnerService : BackgroundService
    }
 
    /// <summary>
-   ///    Builds the job span's start tags. A tag whose value is null is left out, so the span carries the same tags
-   ///    it did when they were set one by one after start.
+   ///    Builds the job span's start tags. A tag whose value is null is left out.
    /// </summary>
    private static List<KeyValuePair<string, object?>> GetJobSpanTags(JobStoreItem jobBusItem)
    {

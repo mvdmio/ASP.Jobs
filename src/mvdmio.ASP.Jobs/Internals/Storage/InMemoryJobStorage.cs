@@ -22,8 +22,8 @@ internal sealed class InMemoryJobStorage : IJobStorage
    private readonly IDictionary<string, JobStoreItem> _scheduledJobs = new Dictionary<string, JobStoreItem>();
    private TaskCompletionSource<object?> _wakeWaiters = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-   internal IEnumerable<JobStoreItem> ScheduledJobs => _scheduledJobs.Values;
-   internal IEnumerable<JobStoreItem> InProgressJobs => _inProgressJobs.Values;
+   internal IEnumerable<JobStoreItem> ScheduledJobs => Snapshot(_scheduledJobs.Values);
+   internal IEnumerable<JobStoreItem> InProgressJobs => Snapshot(_inProgressJobs.Values);
 
    private IEnumerable<string> GroupsInProgress => _inProgressJobs
       .Where(x => x.Value.Options.Group is not null)
@@ -174,6 +174,23 @@ internal sealed class InMemoryJobStorage : IJobStorage
          SendWakeSignal();
 
          return true;
+      }
+      finally
+      {
+         _jobQueueLock.Release();
+      }
+   }
+
+   /// <summary>
+   ///    Copies the jobs under the queue lock, so a reader never enumerates a dictionary that the runner is changing.
+   /// </summary>
+   private JobStoreItem[] Snapshot(IEnumerable<JobStoreItem> jobs)
+   {
+      _jobQueueLock.Wait();
+
+      try
+      {
+         return jobs.ToArray();
       }
       finally
       {

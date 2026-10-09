@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
+using mvdmio.ASP.Jobs.Internals;
 using OpenTelemetry.Trace;
 
 namespace mvdmio.ASP.Jobs;
@@ -67,7 +68,7 @@ public static class DependencyInjectionExtensions
       public void AddJobs()
       {
          // Add the job activity source to the OpenTelemetry tracing.
-         builder.AddSource("mvdmio.ASP.Jobs");
+         builder.AddSource(JobRunnerService.ActivitySourceName);
       }
    }
    

@@ -1,6 +1,6 @@
 # 01 — Job runner passes the span's name and tags at start
 
-Status: built
+Status: done
 Depends on: none
 
 ## What to build
@@ -59,11 +59,14 @@ Projects: `src/mvdmio.ASP.Jobs/mvdmio.ASP.Jobs.csproj`, `test/mvdmio.ASP.Jobs.Te
 ## Outcome
 
 Safety fact: the runner passes `Job: <JobType.Name>`, kind `Internal`, and the non-null job tags to `StartActivity`, so a sampling callback sees the job type when it decides, and both a recorded and a propagation-only span carry the same name and tags; if false, a sampler cannot tell jobs apart, or code reading `Activity.Current` in a dropped run loses the job name (rung 3)
-Proof: `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter FullyQualifiedName~JobRunnerTracingTests` exit 0 — Passed!  - Failed: 0, Passed: 5, Skipped: 0, Total: 5 (with `JobRunnerService.cs` from `main`, 4 of the 5 fail)
-Merge risk: easy — reverting the commit restores the old span start and version 4.9.0; nothing is published until a push to `main`; affects applications whose samplers or dashboards key on the operation name `PerformJob`
+Proof: `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter FullyQualifiedName~JobRunnerTracingTests` exit 0 — Passed!  - Failed: 0, Passed: 5, Skipped: 0, Total: 5 (with `JobRunnerService.cs` from d4e768d, 4 of the 5 fail)
+Merge risk: easy — reverting the commits restores the old span start, the live in-memory job views, and version 4.9.0; nothing is published until a push to `main`; affects applications whose samplers or dashboards key on the operation name `PerformJob`
 
 - .NET does attach the start tags and the start name to a propagation-only span: the dropped-span test passes without setting them again after start, so the runner no longer calls `SetTag` or sets `DisplayName` after start.
 - A small helper, `GetJobSpanTags` in `JobRunnerService`, leaves null-valued tags out of the start tags.
 - `TestJob.Parameters` gains `ExecuteActivity` (`[JsonIgnore]`), set to `Activity.Current` inside `ExecuteAsync`.
 - `dotnet build` and `dotnet test` pass for the whole solution: 101 unit tests, 108 integration tests.
-- This worktree-isolated session could not write to the Proof folder, so the Proof line names only the command.
+- The runner builds the span name and tags only when the activity source `HasListeners()`, so a run with no listener allocates nothing for tracing.
+- `JobRunnerService.ActivitySourceName` (`internal const`, `mvdmio.ASP.Jobs`) is the one source of the activity source name; `TracerProviderBuilder.AddJobs()` and `JobRunnerTracingTests` read it.
+- `JobRunnerHarness.WaitUntilAsync` (static) replaces the private copies in `JobRunnerRetryTests` and `JobRunnerTracingTests`.
+- `InMemoryJobStorage.ScheduledJobs` and `InProgressJobs` (and so `GetScheduledJobsAsync` and `GetInProgressJobsAsync`) now return a copy taken under the queue lock. Before, they returned the live dictionary view, and `JobCulturePropagationTests.PerformCron_CarriesCultureForwardToNextOccurrence` failed about 2 runs in 3 with "Collection was modified" once the new tracing tests ran beside it.

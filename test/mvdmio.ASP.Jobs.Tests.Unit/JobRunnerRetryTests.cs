@@ -209,7 +209,7 @@ public sealed class JobRunnerRetryTests
       await _harness.Scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(failingParameters, new JobScheduleOptions { JobName = jobName }, CancellationToken);
 
       await _harness.Runner.StartAsync(CancellationToken);
-      await WaitUntilAsync(() => _harness.Storage.InProgressJobs.Any(), CancellationToken);
+      await JobRunnerHarness.WaitUntilAsync(() => _harness.Storage.InProgressJobs.Any(), CancellationToken);
 
       // Schedule the superseding job far in the future, so the producer never claims it for execution - it only
       // needs to exist as a not-started job of the same name for the supersession check to see a conflict. If it
@@ -222,7 +222,7 @@ public sealed class JobRunnerRetryTests
          new JobScheduleOptions { JobName = jobName },
          CancellationToken);
 
-      await WaitUntilAsync(() => !_harness.Storage.InProgressJobs.Any(), CancellationToken); // the original chain resolves (superseded)
+      await JobRunnerHarness.WaitUntilAsync(() => !_harness.Storage.InProgressJobs.Any(), CancellationToken); // the original chain resolves (superseded)
       await _harness.Runner.StopAsync(CancellationToken);
 
       // Assert
@@ -276,7 +276,7 @@ public sealed class JobRunnerRetryTests
       // Act - drive the runner directly rather than RunAndDrainAsync: a CRON chain always leaves one scheduled
       // job behind (the next occurrence), so a "wait until empty" drain would never terminate.
       await _harness.Runner.StartAsync(CancellationToken);
-      await WaitUntilAsync(() => parameters.Executed, CancellationToken);
+      await JobRunnerHarness.WaitUntilAsync(() => parameters.Executed, CancellationToken);
       await _harness.Runner.StopAsync(CancellationToken);
 
       // Assert
@@ -483,15 +483,7 @@ public sealed class JobRunnerRetryTests
    private async Task RunUntilRetriesScheduledAsync(params TestJob.Parameters[] parameters)
    {
       await _harness.Runner.StartAsync(CancellationToken);
-      await WaitUntilAsync(() => parameters.All(p => p.RetryContexts.Count > 0), CancellationToken);
+      await JobRunnerHarness.WaitUntilAsync(() => parameters.All(p => p.RetryContexts.Count > 0), CancellationToken);
       await _harness.Runner.StopAsync(CancellationToken);
-   }
-
-   private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken ct)
-   {
-      while (!condition())
-      {
-         await Task.Delay(5, ct);
-      }
    }
 }

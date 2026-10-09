@@ -52,6 +52,18 @@ internal sealed class JobRunnerHarness
       await Runner.StopAsync(ct);
    }
 
+   /// <summary>
+   /// Polls until <paramref name="condition"/> holds. Pair it with a direct <see cref="Runner"/> start and stop where a
+   /// drain never ends, such as a CRON chain that always leaves its next occurrence scheduled.
+   /// </summary>
+   public static async Task WaitUntilAsync(Func<bool> condition, CancellationToken ct)
+   {
+      while (!condition())
+      {
+         await Task.Delay(5, ct);
+      }
+   }
+
    public async Task WaitForAllJobsToFinishAsync(CancellationToken ct)
    {
       while (true)
