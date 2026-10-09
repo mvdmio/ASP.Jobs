@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-09: Named job pool and error backoff
+The job storage's PostgreSQL connections now show in `pg_stat_activity` and in database traces under the program's name plus `.Jobs`, for example `MyCompany.Web.Jobs`, and that pool is capped at 10 connections unless the connection string sets `Maximum Pool Size`, where before it could grow to 100. When fetching the next job fails, for example while PostgreSQL restarts or has run out of connection slots, the job runner now waits 1 second before it tries again and doubles the wait on each further error up to 30 seconds, where before it retried at once and logged an error on every pass. A successful fetch resets the wait, and shutting the app down cuts it short.
+
 ## 2026-10-08: Batch scheduling stores jobs together
 Scheduling a list of jobs with `PerformAsapAsync` or `PerformAtAsync` now stores the whole list in one database write and wakes listening workers once, instead of once per job. A batch is now all-or-nothing: when any job in it fails to schedule, for example because its `OnJobScheduledAsync` hook throws, no job from that batch is stored, where before the jobs ahead of the failure stayed scheduled. Each job still runs its own scheduling hook and keeps its own name, culture and run time.
 
