@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-09: Samplers can tell jobs apart
+The job runner now gives each job span its name, `Job: <JobType.Name>`, and its `job.*` tags at the moment the span starts, so an OpenTelemetry sampler can decide by `job.type`, for example to record only 1 in 100 runs of a busy job. The exported span keeps the same display name, tags, events and status, and a span the sampler drops still carries the name and tags for code that reads the current span; only the span's operation name changes, from `PerformJob` to `Job: <JobType.Name>`. With in-memory storage, `GetScheduledJobsAsync` now returns a copy of the scheduled jobs, as PostgreSQL storage already does, instead of a live list that could throw "Collection was modified" while jobs ran.
+
 ## 2026-10-09: Named job pool and error backoff
 The job storage's PostgreSQL connections now show in `pg_stat_activity` and in database traces under the program's name plus `.Jobs`, for example `MyCompany.Web.Jobs`, and that pool is capped at 10 connections unless the connection string sets `Maximum Pool Size`, where before it could grow to 100. When fetching the next job fails, for example while PostgreSQL restarts or has run out of connection slots, the job runner now waits 1 second before it tries again and doubles the wait on each further error up to 30 seconds, where before it retried at once and logged an error on every pass. A successful fetch resets the wait, and shutting the app down cuts it short.
 
