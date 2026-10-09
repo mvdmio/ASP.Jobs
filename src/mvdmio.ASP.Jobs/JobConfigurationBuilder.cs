@@ -45,7 +45,7 @@ public class JobConfigurationBuilder
 
    /// <summary>
    ///    Configures the job system to use <see cref="PostgresJobStorage" /> as the job storage.
-   ///    The job storage's connection pool is named after the entry assembly plus <c>.Jobs</c>, or <paramref name="applicationName" /> plus <c>.Jobs</c> when there is no entry assembly.
+   ///    The job storage's connection pool is named after the entry assembly plus <c>.Jobs</c>, or <paramref name="applicationName" /> plus <c>.Jobs</c> when there is no entry assembly or it has no name.
    /// </summary>
    /// <param name="applicationName">The name of the application. Ensures that the current instance only picks up jobs from the same application. Useful for scenarios where the same database is used for multiple different applications.</param>
    /// <param name="connectionString">The connection string to the PostgreSQL database to use for storing jobs.</param>

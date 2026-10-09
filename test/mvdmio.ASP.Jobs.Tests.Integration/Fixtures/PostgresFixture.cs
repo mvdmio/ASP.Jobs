@@ -1,6 +1,6 @@
-﻿using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
+﻿using Microsoft.Extensions.Logging.Abstractions;
+using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
-using Microsoft.Extensions.Logging.Abstractions;
 using mvdmio.Database.PgSQL;
 using mvdmio.Database.PgSQL.Migrations;
 using Testcontainers.PostgreSql;

@@ -92,9 +92,9 @@ message — storage is never migrated lazily as a side effect of scheduling.
 Store jobs in PostgreSQL with `UsePostgresStorage(applicationName, connectionString)`.
 
 The job storage uses its own connection pool, named after the program's entry assembly plus `.Jobs`, for example
-`MyCompany.Web.Jobs`. When there is no entry assembly, the name is `applicationName` plus `.Jobs`. The name shows in
-`pg_stat_activity.application_name` and in database traces, so you can tell the job runner's connections from the app's
-own. The pool is capped by the connection string's `Maximum Pool Size`, or else by the Database.PgSQL default of 10.
+`MyCompany.Web.Jobs`. When there is no entry assembly, or it has no name, the name is `applicationName` plus `.Jobs`.
+The name shows in `pg_stat_activity.application_name` and in database traces, so you can tell the job runner's
+connections from the app's own. The pool is capped by the connection string's `Maximum Pool Size`, or else by the Database.PgSQL default of 10.
 
 After a storage error, for example while PostgreSQL restarts or refuses new connections, the job runner waits 1 second
 before it tries again. Each further consecutive error doubles the wait, up to 30 seconds. A successful fetch resets the

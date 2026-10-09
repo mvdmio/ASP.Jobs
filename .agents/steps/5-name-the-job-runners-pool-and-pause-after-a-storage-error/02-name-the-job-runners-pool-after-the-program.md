@@ -1,6 +1,6 @@
 # 02 — Name the job runner's pool after the program
 
-Status: built
+Status: done
 Depends on: 01
 
 ## What to build
@@ -59,6 +59,9 @@ Projects: `src/mvdmio.ASP.Jobs`, `test/mvdmio.ASP.Jobs.Tests.Unit`, `test/mvdmio
 - Footprint drift: `PostgresFixture.cs` is touched, not for the cap (the default of 10 starved nothing) but because 0.41.0 marks `DatabaseMigrator(DatabaseConnection, params Assembly[])` obsolete (CS0618); it now passes `NullLoggerFactory.Instance`.
 - Whole suite: unit 97/97, integration 108/108.
 
+- Checker: the integration test now opens its observer connection once (`await db.OpenAsync(ct)`) and disposes it, so `pid <> pg_backend_pid()` always excludes the observer. README and the `UsePostgresStorage` XML doc now also name the "entry assembly has no name" fallback. Usings in `PostgresFixture.cs` reordered.
+- Checker re-run: whole suite green (unit 97/97, integration 108/108). With the suffix changed to `.Broken`, the integration test fails, so it guards the name.
+
 Safety fact: every connection the job storage opens, the LISTEN connection included, carries `<entry assembly>.Jobs` as its `application_name`, falling back to `<applicationName>.Jobs`; if false, operators cannot tell the job runner's pool from the app's own pool on a shared server, and the keyed factory may fail to resolve now that it has two constructors (rung 3)
 Proof: `dotnet test test/mvdmio.ASP.Jobs.Tests.Integration/mvdmio.ASP.Jobs.Tests.Integration.csproj --filter "FullyQualifiedName~JobsPoolNameTests"` exit 0 — Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1
-Merge risk: easy — reverting restores the unnamed pool and Database.PgSQL 0.29.0; nothing persisted, no release published; affects operators reading `pg_stat_activity`, and hosts that now get Database.PgSQL 0.41.0's default cap of 10 on the job pool
+Merge risk: easy — reverting restores the unnamed pool and Database.PgSQL 0.29.0; nothing persisted, no release published; affects operators reading `pg_stat_activity`, and hosts that now get Database.PgSQL 0.41.0's default cap of 10 on the job pool and its transitive dependency bump

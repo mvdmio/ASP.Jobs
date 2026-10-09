@@ -42,7 +42,10 @@ public sealed class JobsPoolNameTests : IAsyncLifetime
       try
       {
          using var connectionFactory = new DatabaseConnectionFactory(new DatabaseConnectionFactorySettings { ApplicationName = "pool-name-test-observer" });
-         var db = connectionFactory.BuildConnection(connectionString);
+         await using var db = connectionFactory.BuildConnection(connectionString);
+
+         // Keep one connection open, so pg_backend_pid() always excludes the observer itself.
+         await db.OpenAsync(ct);
 
          // Act - wait until the runner sits in its LISTEN.
          var deadline = DateTime.UtcNow.AddSeconds(30);
