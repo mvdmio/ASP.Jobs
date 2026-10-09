@@ -1,6 +1,6 @@
 # 01 — Pause the producer after a storage error
 
-Status: built
+Status: done
 Depends on: none
 
 ## What to build
@@ -53,6 +53,7 @@ Projects: `src/mvdmio.ASP.Jobs`, `test/mvdmio.ASP.Jobs.Tests.Unit`, `test/mvdmio
 - Tests: `test/mvdmio.ASP.Jobs.Tests.Unit/JobRunnerStorageErrorBackoffTests.cs` (wait sequence, handful of attempts in 3.5 s, reset after success, prompt stop during a wait). New test helper `test/mvdmio.ASP.Jobs.Tests.Unit/Utils/RecordingLogger.cs` records log entries. `JobRunnerHarness` is unchanged.
 - README: new `## PostgreSQL storage` section, placed after `## Initialization`; Step 02 adds the pool name there.
 - Footprint drift: none.
+- Checker: `GetStorageErrorBackoff` now computes `Math.Min(Math.Pow(2, count - 1), 30)` (one cap, no overflow); the loop test accepts 2 to 4 attempts in 3.5 s instead of exactly 3; `RecordingLogger<T>` is listed in `.agents/refs/testing.md`.
 
 Safety fact: after a fetch error the producer waits 1, 2, 4 … 30 s before the next fetch, resets after a successful fetch, and a stop during the wait returns at once; if false, a Postgres outage turns back into a tight loop of connection attempts and error logs, or shutdown hangs for up to 30 s (rung 3)
 Proof: `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~JobRunnerStorageErrorBackoffTests"` exit 0 — Passed!  - Failed:     0, Passed:    12, Skipped:     0, Total:    12

@@ -22,6 +22,7 @@ Test stack: **xUnit v3** + **NSubstitute** (mocking) + **AwesomeAssertions** (fl
 | `TestClock` | Controllable time for testing scheduled jobs |
 | `TestJob` | Job with configurable delay and exception behavior |
 | `JobTestServices` | Helper for setting up test DI containers |
+| `RecordingLogger<T>` | Logger that records every entry, to assert which lines were logged and how often |
 
 Reuse these utilities rather than rolling your own.
 

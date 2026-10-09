@@ -124,7 +124,8 @@ internal sealed class JobRunnerService : BackgroundService
 
                // Pause before the next attempt so a storage outage does not become a tight loop of connection attempts.
                // The delay observes the stopping token, so shutdown ends the pause at once.
-               consecutiveStorageErrors = consecutiveStorageErrors == int.MaxValue ? int.MaxValue : consecutiveStorageErrors + 1;
+               if (consecutiveStorageErrors < int.MaxValue)
+                  consecutiveStorageErrors++;
 
                try
                {
@@ -154,11 +155,10 @@ internal sealed class JobRunnerService : BackgroundService
    {
       ArgumentOutOfRangeException.ThrowIfLessThan(consecutiveErrors, 1);
 
-      const int maxSeconds = 30;
+      const double maxSeconds = 30;
 
-      // 2^5 = 32 already exceeds the cap, so larger exponents never need computing (and never overflow).
-      var exponent = Math.Min(consecutiveErrors - 1, 5);
-      var seconds = Math.Min(1 << exponent, maxSeconds);
+      // Math.Pow returns infinity rather than overflowing for large counts, which the cap then clamps.
+      var seconds = Math.Min(Math.Pow(2, consecutiveErrors - 1), maxSeconds);
 
       return TimeSpan.FromSeconds(seconds);
    }
