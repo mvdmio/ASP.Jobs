@@ -98,14 +98,19 @@ internal sealed class PostgresJobInstanceRepository
 
    /// <summary>
    ///    Cleans up instances that have not reported a heartbeat in over 5 minutes.
-   ///    Releases any jobs claimed by those instances so they can be picked up by other workers.
+   ///    Releases any jobs claimed by those instances so they can be picked up by other workers. When any of those
+   ///    jobs had a group, that group is free again, so waiting claims are woken to run its next job.
    /// </summary>
    /// <param name="ct">A token to observe for cancellation requests.</param>
    /// <returns>A task representing the asynchronous operation.</returns>
    public async Task CleanupOldInstances(CancellationToken ct = default)
    {
-      await Db.InTransactionAsync(async () => {
-            var expiredInstances = await Db.Dapper.QueryAsync<string>(
+      // One wrapper for the whole transaction: a statement run on another wrapper runs outside it.
+      var db = Db;
+      var releasesAGroupedClaim = false;
+
+      await db.InTransactionAsync(async () => {
+            var expiredInstances = await db.Dapper.QueryAsync<string>(
                """
                SELECT instance_id
                FROM mvdmio.job_instances
@@ -119,7 +124,9 @@ internal sealed class PostgresJobInstanceRepository
 
             if (expiredInstances.Any())
             {
-               await Db.Dapper.ExecuteAsync(
+               releasesAGroupedClaim = await HoldsAGroupedClaimAsync(db, expiredInstances, ct);
+
+               await db.Dapper.ExecuteAsync(
                   """
                   -- Reduce stale in-progress rows so that at most one row per
                   -- (application_name, job_name) ends up satisfying the partial unique index
@@ -182,17 +189,28 @@ internal sealed class PostgresJobInstanceRepository
             }
          }
       );
+
+      // Notify after the commit, so a woken claim sees the group free.
+      if (releasesAGroupedClaim)
+         await JobsUpdatedChannel.NotifyAsync(db, ct);
    }
 
    /// <summary>
-   ///    Releases all jobs that were started by the current instance, making them available for other workers.
+   ///    Releases all jobs that were started by the current instance, making them available for other workers. When
+   ///    any of those jobs had a group, that group is free again, so waiting claims are woken to run its next job.
    /// </summary>
    /// <param name="ct">A token to observe for cancellation requests.</param>
    /// <returns>A task representing the asynchronous operation.</returns>
    public async Task ReleaseStartedJobs(CancellationToken ct = default)
    {
-      await Db.InTransactionAsync(async () => {
-            await Db.Dapper.ExecuteAsync(
+      // One wrapper for the whole transaction: a statement run on another wrapper runs outside it.
+      var db = Db;
+      var releasesAGroupedClaim = false;
+
+      await db.InTransactionAsync(async () => {
+            releasesAGroupedClaim = await HoldsAGroupedClaimAsync(db, [InstanceId], ct);
+
+            await db.Dapper.ExecuteAsync(
                """
                -- Reduce stale in-progress rows owned by this instance so that at most one row
                -- per (application_name, job_name) ends up satisfying the partial unique index
@@ -252,6 +270,33 @@ internal sealed class PostgresJobInstanceRepository
                ct: ct
             );
          }
+      );
+
+      // Notify after the commit, so a woken claim sees the group free.
+      if (releasesAGroupedClaim)
+         await JobsUpdatedChannel.NotifyAsync(db, ct);
+   }
+
+   /// <summary>
+   ///    Tells whether any of the given instances holds a Claim on a grouped job. Releasing such a Claim frees its group.
+   ///    Runs on <paramref name="db"/>, so it reads inside the caller's transaction.
+   /// </summary>
+   private static async Task<bool> HoldsAGroupedClaimAsync(DatabaseConnection db, IEnumerable<string> instanceIds, CancellationToken ct)
+   {
+      return await db.Dapper.QueryFirstAsync<bool>(
+         """
+         SELECT EXISTS (
+            SELECT 1
+            FROM mvdmio.jobs
+            WHERE started_at IS NOT NULL
+              AND started_by = ANY(:instanceIds)
+              AND job_group IS NOT NULL
+         )
+         """,
+         new Dictionary<string, object?> {
+            { "instanceIds", instanceIds.ToArray() }
+         },
+         ct: ct
       );
    }
 

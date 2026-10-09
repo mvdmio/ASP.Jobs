@@ -12,6 +12,7 @@ using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
 using mvdmio.ASP.Jobs.Utils;
 using mvdmio.Database.PgSQL;
 using mvdmio.Database.PgSQL.Dapper.QueryParameters;
+using mvdmio.Database.PgSQL.Exceptions;
 using mvdmio.Database.PgSQL.Migrations;
 using Npgsql;
 using NpgsqlTypes;
@@ -30,6 +31,17 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    /// </summary>
    private static readonly TimeSpan ResolutionGrace = TimeSpan.FromMinutes(5);
 
+   /// <summary>
+   ///    The longest a claim with nothing to claim sleeps before it looks again, even when no job is coming due.
+   /// </summary>
+   private static readonly TimeSpan MaxWaitTime = TimeSpan.FromSeconds(30);
+
+   /// <summary>
+   ///    How long a claim waits before it looks again when a due job could not be claimed because a peer holds the
+   ///    job's row or its group's advisory lock in the middle of its own claim.
+   /// </summary>
+   private static readonly TimeSpan ContendedClaimRetryDelay = TimeSpan.FromMilliseconds(100);
+
    private readonly DatabaseConnectionFactory _dbConnectionFactory;
    private readonly IOptions<PostgresJobStorageConfiguration> _configuration;
    private readonly ILoggerFactory _loggerFactory;
@@ -37,6 +49,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    private readonly IClock _clock;
 
    private readonly UnresolvableJobSkipList _unresolvableJobSkipList = new();
+   private readonly PostgresJobClaimer _claimer;
 
    private readonly SemaphoreSlim _initializationLock = new(1, 1);
 
@@ -66,6 +79,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       _dbConnectionFactory = dbConnectionFactory;
       _logger = loggerFactory.CreateLogger<PostgresJobStorage>();
       _clock = clock;
+      _claimer = new PostgresJobClaimer(() => Db, configuration);
    }
 
    public Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default)
@@ -128,12 +142,16 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          ct: ct
       );
 
-      await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
+      await JobsUpdatedChannel.NotifyAsync(Db, ct);
    }
 
    public async Task<JobStoreItem?> WaitForNextJobAsync(CancellationToken ct = default)
    {
       ThrowIfNotInitialized();
+
+      // Groups whose claim a peer held during this pass. Cleared before each sleep, so a group skipped only because
+      // a peer was mid-claim is tried again on the next pass.
+      var contendedGroups = new HashSet<string>();
 
       try
       {
@@ -144,32 +162,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
             _unresolvableJobSkipList.PurgeExpired(now);
             var skippedJobIds = _unresolvableJobSkipList.JobIds;
 
-            var selectedJob = await Db.Dapper.QueryFirstOrDefaultAsync<JobData>(
-               $"""
-               UPDATE mvdmio.jobs
-               SET started_at = :now,
-                   started_by = :instance_id
-               WHERE id = (
-                  SELECT id
-                  FROM mvdmio.jobs
-                  WHERE application_name = :application_name
-                    AND perform_at <= :now
-                    AND started_at IS NULL
-                    AND NOT (id = ANY(:skipped_job_ids))
-                  ORDER BY perform_at, created_at
-                  LIMIT 1
-                  FOR UPDATE SKIP LOCKED
-               )
-               RETURNING {JobData.Columns}
-               """,
-               new Dictionary<string, object?> {
-                  { "now", now },
-                  { "instance_id", Configuration.InstanceId },
-                  { "application_name", Configuration.ApplicationName },
-                  { "skipped_job_ids", skippedJobIds }
-               },
-               ct: ct
-            );
+            var selectedJob = await _claimer.ClaimNextJobAsync(now, skippedJobIds, contendedGroups, ct);
 
             if (selectedJob is not null)
             {
@@ -196,14 +189,16 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
                return jobStoreItem;
             }
 
+            contendedGroups.Clear();
             await SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(now, ct);
          }
 
          return null;
       }
-      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      catch (Exception ex) when (ex is OperationCanceledException || (ct.IsCancellationRequested && ex is QueryException { InnerException: OperationCanceledException }))
       {
-         // Ignore cancellation exceptions; they are expected when the service is stopped.
+         // Ignore cancellation exceptions; they are expected when the service is stopped. Db.Dapper wraps a
+         // cancellation that lands mid-query in a QueryException.
          return null;
       }
    }
@@ -221,6 +216,10 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
             { "id", job.JobId }
          }
       );
+
+      // Finishing a grouped job frees its group: wake waiting claims so the next job in the group runs straight away.
+      if (job.Options.Group is not null)
+         await JobsUpdatedChannel.NotifyAsync(Db, ct);
    }
 
    public async Task<bool> TryScheduleRetryAsync(JobStoreItem job, DateTime nextAttemptAtUtc, CancellationToken ct = default)
@@ -251,7 +250,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          return false;
       }
 
-      await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
+      await JobsUpdatedChannel.NotifyAsync(Db, ct);
       return true;
    }
 
@@ -266,7 +265,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          supersededByDescription
       );
 
-      await DeleteJobByIdAsync(job.JobId, ct);
+      await DeleteClaimedJobAsync(job.JobId, job.Options.Group, ct);
    }
 
    public async Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
@@ -303,6 +302,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       return FilterResolvableJobs(jobData);
    }
 
+   // Sends no jobs_updated. Delete a Claimed row through DeleteClaimedJobAsync, which wakes the claims waiting on its group.
    public async Task DeleteJobByIdAsync(Guid jobId, CancellationToken ct = default)
    {
       ThrowIfNotInitialized();
@@ -317,6 +317,18 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          },
          ct: ct
       );
+   }
+
+   /// <summary>
+   ///    Deletes a Claimed job's row. Deleting a grouped row frees its group, so waiting claims are woken to run the
+   ///    next job in that group straight away.
+   /// </summary>
+   private async Task DeleteClaimedJobAsync(Guid jobId, string? group, CancellationToken ct)
+   {
+      await DeleteJobByIdAsync(jobId, ct);
+
+      if (group is not null)
+         await JobsUpdatedChannel.NotifyAsync(Db, ct);
    }
 
    private IEnumerable<JobStoreItem> FilterResolvableJobs(IEnumerable<JobData> jobData)
@@ -382,7 +394,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       // same job on its very next pass, which is the tight loop the skip list exists to prevent.
       _unresolvableJobSkipList.Add(job.Id, now.Add(ResolutionGrace));
 
-      await Db.Dapper.ExecuteAsync("NOTIFY jobs_updated", ct: ct);
+      await JobsUpdatedChannel.NotifyAsync(Db, ct);
 
       _logger.LogDebug(
          "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded in this process. Deferring for the Resolution Grace window.",
@@ -401,7 +413,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
    /// </summary>
    private async Task DeleteExpiredUnresolvableJobAsync(JobData job, DateTime now, CancellationToken ct)
    {
-      await DeleteUnresolvableJobAsync(job.Id, ct);
+      await DeleteUnresolvableJobAsync(job, ct);
 
       _logger.LogWarning(
          "Job '{JobName}' (ID: {JobId}) with type '{JobType}' could not be loaded in this process for {UnloadableDuration}, past the Resolution Grace window. The row was deleted.",
@@ -454,81 +466,77 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          supersededByDescription
       );
 
-      await DeleteUnresolvableJobAsync(job.Id, ct);
+      await DeleteUnresolvableJobAsync(job, ct);
    }
 
    /// <summary>
    ///    Deletes an Unresolvable Job's row and drops its skip-list entry, so the set cannot hold an id whose job no
    ///    longer exists and cannot grow without bound.
    /// </summary>
-   private async Task DeleteUnresolvableJobAsync(Guid jobId, CancellationToken ct)
+   private async Task DeleteUnresolvableJobAsync(JobData job, CancellationToken ct)
    {
-      await DeleteJobByIdAsync(jobId, ct);
-      _unresolvableJobSkipList.Remove(jobId);
+      await DeleteClaimedJobAsync(job.Id, job.JobGroup, ct);
+      _unresolvableJobSkipList.Remove(job.Id);
    }
 
    private async Task SleepUntilWakeOrMaxWaitTimeOrNextJobPerformAt(DateTime now, CancellationToken ct)
    {
       var minPerformAt = await Db.Dapper.QueryFirstOrDefaultAsync<DateTime?>(
-         """
+         $"""
          SELECT MIN(perform_at)
          FROM mvdmio.jobs
-         WHERE started_at IS NULL
+         WHERE application_name = :application_name
+           AND started_at IS NULL
            AND NOT (id = ANY(:skipped_job_ids))
+           AND {PostgresJobClaimer.GroupIsFreeCondition}
          """,
          new Dictionary<string, object?> {
+            { "application_name", Configuration.ApplicationName },
             { "skipped_job_ids", _unresolvableJobSkipList.JobIds }
          },
          ct: ct
       );
 
-      // Rows in the skip list are still pending and due, so excluding them above stops the "next
-      // due time" query from returning a time in the past for the whole Resolution Grace window
-      // (which would otherwise spin this loop hot). Instead, bound the wait by whichever comes
-      // first: the next non-skipped job coming due, or the earliest skip entry lapsing - at which
-      // point its job becomes eligible for this instance's own Claim query again.
+      // Rows in the skip list and group-mates of a running job are still pending and due, but not claimable.
+      // Counting them would return a time in the past and spin this loop hot: for the whole Resolution Grace
+      // window, or for as long as the group is busy. Instead, bound the wait by whichever comes first: the next
+      // non-skipped job coming due, or the earliest skip entry lapsing - at which point its job becomes eligible for
+      // this instance's own Claim query again. Every path that frees a group (finishing, a retry reschedule,
+      // releasing or deleting a Claim, resetting an instance's Claims) sends jobs_updated, which wakes this wait.
       var earliestSkipListExpiry = _unresolvableJobSkipList.EarliestExpiry;
 
       var nextWakeAt = minPerformAt;
       if (earliestSkipListExpiry.HasValue && (nextWakeAt is null || earliestSkipListExpiry.Value < nextWakeAt.Value))
          nextWakeAt = earliestSkipListExpiry;
 
-      TimeSpan? timeUntilNextWake = nextWakeAt.HasValue ? nextWakeAt.Value - now : null;
+      // A notification sent after the claim query but before this wait starts listening is lost, so the wait never
+      // runs longer than MaxWaitTime: a lost wake-up delays a claimable job by at most that long.
+      var timeUntilNextWake = nextWakeAt.HasValue && nextWakeAt.Value - now < MaxWaitTime ? nextWakeAt.Value - now : MaxWaitTime;
 
-      if (timeUntilNextWake.HasValue && timeUntilNextWake.Value <= TimeSpan.Zero)
-         return;
+      // A due job this pass could not claim is held by a peer mid-claim: its row lock, its group's advisory lock, or
+      // the earliest row of its group. Querying again at once would spin this loop until the peer's transaction
+      // ends, so wait briefly instead. A peer that commits its claim makes the group busy, which leaves it out of the
+      // query above; a peer that rolls back is retried after this short wait.
+      if (timeUntilNextWake <= TimeSpan.Zero)
+         timeUntilNextWake = ContendedClaimRetryDelay;
 
-      if (timeUntilNextWake.HasValue)
-      {
-         // Use a linked cancellation token so that whichever branch loses the race in Task.WhenAny
-         // is cancelled and releases its resources. Without this, Db.WaitAsync keeps a dedicated
-         // LISTEN connection open until the outer cancellation token fires, leaking one connection
-         // per polling iteration whenever the delay branch wins (eventually exhausting Postgres'
-         // max_connections with error 53300).
-         using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      // Use a linked cancellation token so that whichever branch loses the race in Task.WhenAny
+      // is cancelled and releases its resources. Without this, Db.WaitAsync keeps a dedicated
+      // LISTEN connection open until the outer cancellation token fires, leaking one connection
+      // per polling iteration whenever the delay branch wins (eventually exhausting Postgres'
+      // max_connections with error 53300).
+      using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-         var delayTask = Task.Delay(timeUntilNextWake.Value, waitCts.Token);
-         var listenTask = Db.WaitAsync("jobs_updated", waitCts.Token);
+      var delayTask = Task.Delay(timeUntilNextWake, waitCts.Token);
+      var listenTask = Db.WaitAsync(JobsUpdatedChannel.Name, waitCts.Token);
 
-         await Task.WhenAny(delayTask, listenTask);
+      await Task.WhenAny(delayTask, listenTask);
 
-         // Cancel both branches so the loser releases its resources (in particular the
-         // dedicated LISTEN connection used by Db.WaitAsync) before we return. We then
-         // await both tasks to ensure their cleanup (NpgsqlConnection.CloseAsync /
-         // DisposeAsync inside WaitAsync) has actually run.
-         await CancelAndDrainAsync(waitCts, delayTask, listenTask);
-      }
-      else
-      {
-         try
-         {
-            await Db.WaitAsync("jobs_updated", ct);
-         }
-         catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-         {
-            // Expected when the outer token fires.
-         }
-      }
+      // Cancel both branches so the loser releases its resources (in particular the
+      // dedicated LISTEN connection used by Db.WaitAsync) before we return. We then
+      // await both tasks to ensure their cleanup (NpgsqlConnection.CloseAsync /
+      // DisposeAsync inside WaitAsync) has actually run.
+      await CancelAndDrainAsync(waitCts, delayTask, listenTask);
    }
 
    private static async Task CancelAndDrainAsync(CancellationTokenSource cts, params Task[] tasks)

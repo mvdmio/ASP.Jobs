@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-10: PostgreSQL storage now honours job groups
+With PostgreSQL storage, jobs that share a `Group` now run one at a time across every worker process of the same application, in the order they are due, as in-memory storage already did; before, every due job in a group could run at once and take every job slot. The next job in a group starts as soon as the running one finishes, is rescheduled for a retry, or is released at shutdown, but if a worker process stops without shutting down cleanly while it runs a grouped job, the group waits until that process is found stopped, about five to six minutes after its last heartbeat. Idle worker processes now also check the database at least every 30 seconds even when nothing is due, and no longer check over and over without pause while another application's jobs are due.
+
 ## 2026-10-09: Samplers can tell jobs apart
 The job runner now gives each job span its name, `Job: <JobType.Name>`, and its `job.*` tags at the moment the span starts, so an OpenTelemetry sampler can decide by `job.type`, for example to record only 1 in 100 runs of a busy job. The exported span keeps the same display name, tags, events and status, and a span the sampler drops still carries the name and tags for code that reads the current span; only the span's operation name changes, from `PerformJob` to `Job: <JobType.Name>`. With in-memory storage, `GetScheduledJobsAsync` now returns a copy of the scheduled jobs, as PostgreSQL storage already does, instead of a live list that could throw "Collection was modified" while jobs ran.
 

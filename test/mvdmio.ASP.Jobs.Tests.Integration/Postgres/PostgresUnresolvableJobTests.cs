@@ -21,9 +21,6 @@ namespace mvdmio.ASP.Jobs.Tests.Integration.Postgres;
 /// </summary>
 public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
 {
-   private const string UnresolvableJobType = "mvdmio.NoSuchNamespace.NoSuchJob, mvdmio.NoSuchAssembly";
-   private const string UnresolvableParametersType = "mvdmio.NoSuchNamespace.NoSuchParameters, mvdmio.NoSuchAssembly";
-
    private readonly PostgresFixture _fixture;
    private readonly CancellationTokenSource _cts;
    private readonly PostgresStorageHarness _harness;
@@ -162,7 +159,7 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
       cts.CancelAfter(TimeSpan.FromSeconds(5));
 
       // Act - start listening before triggering the defer so the NOTIFY is not missed.
-      var listenTask = _db.WaitAsync("jobs_updated", TimeSpan.FromSeconds(5), cts.Token);
+      var listenTask = _db.WaitAsync(JobsUpdatedChannel.Name, TimeSpan.FromSeconds(5), cts.Token);
       await Task.Delay(TimeSpan.FromMilliseconds(200), cts.Token);
       var waitTask = Storage.WaitForNextJobAsync(cts.Token);
 
@@ -379,8 +376,8 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
       await _db.Dapper.ExecuteAsync(
          "UPDATE mvdmio.jobs SET job_type = :job_type, parameters_type = :parameters_type WHERE id = :id",
          new Dictionary<string, object?> {
-            { "job_type", UnresolvableJobType },
-            { "parameters_type", UnresolvableParametersType },
+            { "job_type", UnresolvableJobRows.UnresolvableJobType },
+            { "parameters_type", UnresolvableJobRows.UnresolvableParametersType },
             { "id", jobStoreItem.JobId }
          },
          ct: CancellationToken
@@ -496,23 +493,7 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
 
    private async Task InsertUnresolvableJobAsync(string jobName, DateTime performAt, DateTime? unresolvableSince = null, CancellationToken? ct = null)
    {
-      await _db.Dapper.ExecuteAsync(
-         """
-         INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, perform_at, unresolvable_since)
-         VALUES (:id, :job_type, :parameters_json, :parameters_type, NULL, :application_name, :job_name, NULL, :perform_at, :unresolvable_since)
-         """,
-         new Dictionary<string, object?> {
-            { "id", Guid.NewGuid() },
-            { "job_type", UnresolvableJobType },
-            { "parameters_json", new TypedQueryParameter("{}", NpgsqlDbType.Jsonb) },
-            { "parameters_type", UnresolvableParametersType },
-            { "application_name", _harness.Configuration.ApplicationName },
-            { "job_name", jobName },
-            { "perform_at", performAt },
-            { "unresolvable_since", unresolvableSince }
-         },
-         ct: ct ?? CancellationToken
-      );
+      await UnresolvableJobRows.InsertAsync(_db, _harness.Configuration.ApplicationName, jobName, performAt, unresolvableSince: unresolvableSince, ct: ct ?? CancellationToken);
    }
 
    private List<JobData> GetJobsFromDatabase() => _db.Dapper.Query<JobData>("SELECT * FROM mvdmio.jobs").ToList();

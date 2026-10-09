@@ -1,3 +1,4 @@
+using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using Npgsql;
 
 namespace mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
@@ -23,7 +24,7 @@ internal sealed class JobsUpdatedListener : IAsyncDisposable
       var connection = new NpgsqlConnection(connectionString);
       await connection.OpenAsync(ct);
 
-      await using (var command = new NpgsqlCommand("LISTEN jobs_updated", connection))
+      await using (var command = new NpgsqlCommand($"LISTEN {JobsUpdatedChannel.Name}", connection))
       {
          await command.ExecuteNonQueryAsync(ct);
       }
