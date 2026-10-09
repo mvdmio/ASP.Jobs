@@ -328,26 +328,19 @@ internal sealed class JobRunnerService : BackgroundService
    }
 
    /// <summary>
-   ///    Builds the job span's start tags. A tag whose value is null is left out.
+   ///    Builds the job span's start tags. The collection's indexer leaves out a tag whose value is null, as
+   ///    <see cref="Activity.SetTag"/> does.
    /// </summary>
-   private static List<KeyValuePair<string, object?>> GetJobSpanTags(JobStoreItem jobBusItem)
+   private static ActivityTagsCollection GetJobSpanTags(JobStoreItem jobBusItem)
    {
-      var tags = new List<KeyValuePair<string, object?>>(6);
-
-      AddTagIfNotNull(tags, "job.type", jobBusItem.JobType.AssemblyQualifiedName);
-      AddTagIfNotNull(tags, "job.name", jobBusItem.Options.JobName);
-      AddTagIfNotNull(tags, "job.group", jobBusItem.Options.Group);
-      AddTagIfNotNull(tags, "job.parameters", jobBusItem.Parameters);
-      AddTagIfNotNull(tags, "job.cron", jobBusItem.CronExpression?.ToString());
-      AddTagIfNotNull(tags, "job.attempt", jobBusItem.Attempt);
-
-      return tags;
-   }
-
-   private static void AddTagIfNotNull(List<KeyValuePair<string, object?>> tags, string key, object? value)
-   {
-      if (value is not null)
-         tags.Add(new KeyValuePair<string, object?>(key, value));
+      return new ActivityTagsCollection {
+         ["job.type"] = jobBusItem.JobType.AssemblyQualifiedName,
+         ["job.name"] = jobBusItem.Options.JobName,
+         ["job.group"] = jobBusItem.Options.Group,
+         ["job.parameters"] = jobBusItem.Parameters,
+         ["job.cron"] = jobBusItem.CronExpression?.ToString(),
+         ["job.attempt"] = jobBusItem.Attempt
+      };
    }
 
    private async Task<bool> RetryJobAsync(JobStoreItem jobBusItem, IJob job, Exception exception, RetryBehavior matchedBehavior, Activity? activity, CancellationToken cancellationToken)
