@@ -13,3 +13,5 @@
 
 **/*.dbmdl
 **/*.jfm
+
+.claude/worktrees/
