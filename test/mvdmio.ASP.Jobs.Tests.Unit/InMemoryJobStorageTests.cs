@@ -289,6 +289,35 @@ public class InMemoryJobStorageTests
       _sut.ScheduledJobs.Should().ContainSingle().Which.Should().Be(supersedingJob);
    }
 
+   [Fact]
+   public async Task GetScheduledJobsAsync_ReturnsASnapshot_ThatLaterSchedulingDoesNotChange()
+   {
+      // Arrange
+      var firstJob = await AddNewJobStoreItem();
+
+      // Act
+      var scheduledJobs = await _sut.GetScheduledJobsAsync(CancellationToken);
+      _ = await AddNewJobStoreItem();
+
+      // Assert
+      scheduledJobs.Should().ContainSingle().Which.Should().Be(firstJob);
+   }
+
+   [Fact]
+   public async Task GetInProgressJobsAsync_ReturnsASnapshot_ThatLaterFinalizingDoesNotChange()
+   {
+      // Arrange
+      var job = await AddNewJobStoreItem();
+      var claimedJob = await _sut.WaitForNextJobAsync(CancellationToken);
+
+      // Act
+      var inProgressJobs = await _sut.GetInProgressJobsAsync(CancellationToken);
+      await _sut.FinalizeJobAsync(claimedJob!, CancellationToken);
+
+      // Assert
+      inProgressJobs.Should().ContainSingle().Which.Should().Be(job);
+   }
+
    private async Task<JobStoreItem> AddNewJobStoreItem(DateTime? performAt = null, string? id = null, string? group = null)
    {
       var jobItem = JobStoreItemFactory.MakeTestJob(
