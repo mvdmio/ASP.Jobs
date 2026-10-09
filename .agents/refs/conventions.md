@@ -29,6 +29,10 @@
 - Use the `ct = default` pattern for optional cancellation tokens.
 - Handle `TaskCanceledException` / `OperationCanceledException` appropriately.
 
+## Concurrency
+
+- Never return a live view of a collection other threads change (such as `InMemoryJobStorage`'s job dictionaries); return a copy taken under the lock that guards it.
+
 ## Code style
 
 - **Nullable reference types:** enabled — respect nullability annotations.
