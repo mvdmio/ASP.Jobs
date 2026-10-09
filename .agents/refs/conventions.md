@@ -33,6 +33,12 @@
 
 - Never return a live view of a collection other threads change (such as `InMemoryJobStorage`'s job dictionaries); return a copy taken under the lock that guards it.
 
+## PostgreSQL storage
+
+- Scope every query on `mvdmio.jobs` to `application_name`: several applications share the table, and rows of another application are jobs this one never runs.
+- Inside `InTransactionAsync`, run every statement on the `DatabaseConnection` that opened the transaction (`var db = Db;`, then `db.` throughout). The `Db` property builds a new wrapper on each access, so a statement on `Db` runs outside the transaction.
+- Give every wait on a `NOTIFY` a time limit (see `MaxWaitTime`): a notification sent between the query and the start of `LISTEN` is lost.
+
 ## Code style
 
 - **Nullable reference types:** enabled — respect nullability annotations.

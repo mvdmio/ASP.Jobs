@@ -11,7 +11,7 @@
 
 1. Create a migration class in `src/mvdmio.ASP.Jobs/Internals/Storage/Postgres/Migrations/`.
 2. Name it `_YYYYMMDDHHMM_DescriptiveName.cs`.
-3. Implement `UpAsync` and `DownAsync`.
+3. Implement `IDbMigration`: `Identifier`, `Name` and `UpAsync`. Migrations have no down step.
 
 Migrations use the `mvdmio.Database.PgSQL.Migrations` framework.
 
