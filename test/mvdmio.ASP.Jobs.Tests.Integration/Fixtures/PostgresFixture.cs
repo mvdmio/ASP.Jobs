@@ -1,5 +1,6 @@
 ﻿using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
+using Microsoft.Extensions.Logging.Abstractions;
 using mvdmio.Database.PgSQL;
 using mvdmio.Database.PgSQL.Migrations;
 using Testcontainers.PostgreSql;
@@ -28,7 +29,7 @@ public sealed class PostgresFixture : IAsyncLifetime
    {
       await _dbContainer.StartAsync();
       
-      var migrator = new DatabaseMigrator(DatabaseConnection, typeof(PostgresJobStorage).Assembly);
+      var migrator = new DatabaseMigrator(DatabaseConnection, NullLoggerFactory.Instance, typeof(PostgresJobStorage).Assembly);
       await migrator.MigrateDatabaseToLatestAsync();
    }
 

@@ -1,6 +1,8 @@
 using System;
+using System.Reflection;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
@@ -43,6 +45,7 @@ public class JobConfigurationBuilder
 
    /// <summary>
    ///    Configures the job system to use <see cref="PostgresJobStorage" /> as the job storage.
+   ///    The job storage's connection pool is named after the entry assembly plus <c>.Jobs</c>, or <paramref name="applicationName" /> plus <c>.Jobs</c> when there is no entry assembly.
    /// </summary>
    /// <param name="applicationName">The name of the application. Ensures that the current instance only picks up jobs from the same application. Useful for scenarios where the same database is used for multiple different applications.</param>
    /// <param name="connectionString">The connection string to the PostgreSQL database to use for storing jobs.</param>
@@ -80,7 +83,13 @@ public class JobConfigurationBuilder
       {
          services.Configure(_postgresConfigurationBuilder);
          services.AddSingleton<PostgresJobInstanceRepository>();
-         services.AddKeyedSingleton<DatabaseConnectionFactory>("Jobs");
+         services.AddKeyedSingleton<DatabaseConnectionFactory>("Jobs", (serviceProvider, _) => {
+            var configuration = serviceProvider.GetRequiredService<IOptions<PostgresJobStorageConfiguration>>().Value;
+            var poolName = JobsPoolName.Create(Assembly.GetEntryAssembly()?.GetName().Name, configuration.ApplicationName);
+
+            // No MaxPoolSize: the connection string's Maximum Pool Size applies, or else the Database.PgSQL default.
+            return new DatabaseConnectionFactory(new DatabaseConnectionFactorySettings { ApplicationName = poolName });
+         });
 
          services.AddHostedService<PostgresInstanceRegistrationService>();
          services.AddHostedService<PostgresCleanupService>();

@@ -1,6 +1,6 @@
 # 02 — Name the job runner's pool after the program
 
-Status: pending
+Status: built
 Depends on: 01
 
 ## What to build
@@ -47,3 +47,18 @@ Projects: `src/mvdmio.ASP.Jobs`, `test/mvdmio.ASP.Jobs.Tests.Unit`, `test/mvdmio
 - [ ] `PostgresJobStorage` and `PostgresJobInstanceRepository` still get only the keyed `"Jobs"` factory, so the migrations, the LISTEN connection and the instance repository all carry the name.
 - [ ] The README `## PostgreSQL storage` section states the pool name, its fallback and the cap rule. The `UsePostgresStorage` XML doc mentions the pool name, and the public API is unchanged.
 - [ ] `dotnet build`, then `dotnet test`, run one after the other, pass for the whole solution, integration tests included. They need Docker.
+
+## Outcome
+
+- `mvdmio.Database.PgSQL` raised to 0.41.0; package `<Version>` 4.9.0.
+- Name rule: `internal static string JobsPoolName.Create(string? entryAssemblyName, string applicationName)` in `src/mvdmio.ASP.Jobs/Internals/Storage/Postgres/JobsPoolName.cs`.
+- `JobConfigurationBuilder.SetupServices` registers the keyed `"Jobs"` factory by delegate with `DatabaseConnectionFactorySettings { ApplicationName = JobsPoolName.Create(Assembly.GetEntryAssembly()?.GetName().Name, options.ApplicationName) }` and no `MaxPoolSize`. The `UsePostgresStorage` XML doc gains one sentence; its signature is unchanged.
+- Verified: `PostgresJobStorage` (migrations via `Db`, LISTEN via `Db.WaitAsync`) and `PostgresJobInstanceRepository` still take only `[FromKeyedServices("Jobs")]`.
+- Tests: `test/mvdmio.ASP.Jobs.Tests.Unit/JobsPoolNameTests.cs` (name rule and fallback); `test/mvdmio.ASP.Jobs.Tests.Integration/Postgres/JobsPoolNameTests.cs` (dedicated container, host through `AddJobs`/`UsePostgresStorage`, waits for the LISTEN, checks every other client connection's `application_name`). The LISTEN is matched with `query ILIKE 'LISTEN%jobs_updated%'`, so quoting of the channel name does not matter.
+- README `## PostgreSQL storage` states the pool name, its fallback and the cap rule.
+- Footprint drift: `PostgresFixture.cs` is touched, not for the cap (the default of 10 starved nothing) but because 0.41.0 marks `DatabaseMigrator(DatabaseConnection, params Assembly[])` obsolete (CS0618); it now passes `NullLoggerFactory.Instance`.
+- Whole suite: unit 97/97, integration 108/108.
+
+Safety fact: every connection the job storage opens, the LISTEN connection included, carries `<entry assembly>.Jobs` as its `application_name`, falling back to `<applicationName>.Jobs`; if false, operators cannot tell the job runner's pool from the app's own pool on a shared server, and the keyed factory may fail to resolve now that it has two constructors (rung 3)
+Proof: `dotnet test test/mvdmio.ASP.Jobs.Tests.Integration/mvdmio.ASP.Jobs.Tests.Integration.csproj --filter "FullyQualifiedName~JobsPoolNameTests"` exit 0 — Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1
+Merge risk: easy — reverting restores the unnamed pool and Database.PgSQL 0.29.0; nothing persisted, no release published; affects operators reading `pg_stat_activity`, and hosts that now get Database.PgSQL 0.41.0's default cap of 10 on the job pool
