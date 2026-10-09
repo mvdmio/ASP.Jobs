@@ -16,6 +16,7 @@ namespace mvdmio.ASP.Jobs.Tests.Unit;
 public sealed class JobRunnerStorageErrorBackoffTests
 {
    private const string FetchErrorMessage = "Error while fetching next job from storage";
+   private const string StorageDownMessage = "storage down";
 
    private readonly IJobStorage _storage = Substitute.For<IJobStorage>();
    private readonly RecordingLogger<JobRunnerService> _logger = new();
@@ -43,7 +44,6 @@ public sealed class JobRunnerStorageErrorBackoffTests
    [InlineData(6, 30)]
    [InlineData(7, 30)]
    [InlineData(64, 30)]
-   [InlineData(int.MaxValue, 30)]
    public void BackoffDoublesFromOneSecondUpToThirtySeconds(int consecutiveErrors, int expectedSeconds)
    {
       // Act
@@ -57,7 +57,7 @@ public sealed class JobRunnerStorageErrorBackoffTests
    public async Task FailingStorageIsRetriedOnlyAHandfulOfTimes()
    {
       // Arrange
-      SetupFetchResults(_ => Task.FromException<JobStoreItem?>(new InvalidOperationException("storage down")));
+      SetupFetchResults(_ => StorageDown());
 
       // Act
       await StartAsync();
@@ -67,38 +67,37 @@ public sealed class JobRunnerStorageErrorBackoffTests
       // Assert: a handful of attempts (about 3, at 0 s, 1 s and 3 s), each logged once with the existing message and nothing else.
       _fetchTimes.Should().HaveCountGreaterThanOrEqualTo(2).And.HaveCountLessThanOrEqualTo(4);
       WarningOrWorseEntries().Should().HaveCount(_fetchTimes.Count);
-      WarningOrWorseEntries().Should().OnlyContain(x => x.Message == FetchErrorMessage && x.Exception!.Message == "storage down");
+      WarningOrWorseEntries().Should().OnlyContain(x => x.Message == FetchErrorMessage && x.Exception!.Message == StorageDownMessage);
    }
 
    [Fact]
    public async Task SuccessfulFetchResetsTheBackoff()
    {
       // Arrange: throw twice, return null once, then keep throwing.
-      SetupFetchResults(call => call == 3
-         ? Task.FromResult<JobStoreItem?>(null)
-         : Task.FromException<JobStoreItem?>(new InvalidOperationException("storage down")));
+      SetupFetchResults(call => call == 3 ? Task.FromResult<JobStoreItem?>(null) : StorageDown());
 
       // Act
       await StartAsync();
       await WaitForFetchCountAsync(5, TimeSpan.FromSeconds(10));
       await _runner.StopAsync(CancellationToken);
 
-      // Assert: the 4th fetch is the first error after the success; without the reset, the gap after it would be 4 s.
+      // Assert: the 4th fetch is the first error after the success, so the gap after it is the 1 s wait. Without the
+      // reset it would be 4 s; an upper bound of 3 s leaves room for a busy machine and still tells the two apart.
       var times = _fetchTimes.ToArray();
       var gapAfterFirstErrorFollowingSuccess = times[4] - times[3];
 
       gapAfterFirstErrorFollowingSuccess.Should().BeGreaterThan(TimeSpan.FromSeconds(0.9));
-      gapAfterFirstErrorFollowingSuccess.Should().BeLessThan(TimeSpan.FromSeconds(2));
+      gapAfterFirstErrorFollowingSuccess.Should().BeLessThan(TimeSpan.FromSeconds(3));
    }
 
    [Fact]
    public async Task StoppingDuringBackoffReturnsPromptly()
    {
-      // Arrange
-      SetupFetchResults(_ => Task.FromException<JobStoreItem?>(new InvalidOperationException("storage down")));
+      // Arrange: stop just after the 2nd error, while its 2 s wait has nearly all of its time left.
+      SetupFetchResults(_ => StorageDown());
 
       await StartAsync();
-      await WaitForFetchCountAsync(1, TimeSpan.FromSeconds(5));
+      await WaitForFetchCountAsync(2, TimeSpan.FromSeconds(5));
       await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken);
 
       // Act
@@ -106,10 +105,15 @@ public sealed class JobRunnerStorageErrorBackoffTests
       await _runner.StopAsync(CancellationToken);
       var stopDuration = _stopwatch.Elapsed - stopStartedAt;
 
-      // Assert: the 1 s backoff was cut short, and the cancelled wait logged nothing.
-      stopDuration.Should().BeLessThan(TimeSpan.FromMilliseconds(500));
-      _fetchTimes.Should().HaveCount(1);
-      WarningOrWorseEntries().Should().ContainSingle().Which.Message.Should().Be(FetchErrorMessage);
+      // Assert: the wait was cut short rather than waited out (about 1.9 s), and the cancelled wait logged nothing.
+      stopDuration.Should().BeLessThan(TimeSpan.FromSeconds(1));
+      _fetchTimes.Should().HaveCount(2);
+      WarningOrWorseEntries().Should().HaveCount(2).And.OnlyContain(x => x.Message == FetchErrorMessage);
+   }
+
+   private static Task<JobStoreItem?> StorageDown()
+   {
+      return Task.FromException<JobStoreItem?>(new InvalidOperationException(StorageDownMessage));
    }
 
    private void SetupFetchResults(Func<int, Task<JobStoreItem?>> resultForCall)

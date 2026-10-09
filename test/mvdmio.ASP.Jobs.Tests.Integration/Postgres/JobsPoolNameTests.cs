@@ -1,6 +1,5 @@
 using System.Reflection;
 using AwesomeAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using mvdmio.Database.PgSQL;
 using Testcontainers.PostgreSql;

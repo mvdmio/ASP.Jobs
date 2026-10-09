@@ -24,6 +24,8 @@ internal sealed class JobRunnerService : BackgroundService
    // OpenTelemetry tracing setup
    private static readonly ActivitySource _openTelemetry = new("mvdmio.ASP.Jobs");
 
+   private static readonly TimeSpan _maxStorageErrorBackoff = TimeSpan.FromSeconds(30);
+
    private readonly IOptions<JobRunnerOptions> _options;
    private readonly ILogger<JobRunnerService> _logger;
    private readonly IServiceProvider _services;
@@ -124,14 +126,17 @@ internal sealed class JobRunnerService : BackgroundService
 
                // Pause before the next attempt so a storage outage does not become a tight loop of connection attempts.
                // The delay observes the stopping token, so shutdown ends the pause at once.
-               if (consecutiveStorageErrors < int.MaxValue)
+               var backoff = GetStorageErrorBackoff(consecutiveStorageErrors + 1);
+
+               // Stop counting once the wait reaches its cap: every later wait is the cap as well.
+               if (backoff < _maxStorageErrorBackoff)
                   consecutiveStorageErrors++;
 
                try
                {
-                  await Task.Delay(GetStorageErrorBackoff(consecutiveStorageErrors), ct);
+                  await Task.Delay(backoff, ct);
                }
-               catch (OperationCanceledException)
+               catch (Exception delayEx) when (delayEx is TaskCanceledException or OperationCanceledException)
                {
                   // Expected during shutdown
                   break;
@@ -155,10 +160,7 @@ internal sealed class JobRunnerService : BackgroundService
    {
       ArgumentOutOfRangeException.ThrowIfLessThan(consecutiveErrors, 1);
 
-      const double maxSeconds = 30;
-
-      // Math.Pow returns infinity rather than overflowing for large counts, which the cap then clamps.
-      var seconds = Math.Min(Math.Pow(2, consecutiveErrors - 1), maxSeconds);
+      var seconds = Math.Min(Math.Pow(2, consecutiveErrors - 1), _maxStorageErrorBackoff.TotalSeconds);
 
       return TimeSpan.FromSeconds(seconds);
    }
