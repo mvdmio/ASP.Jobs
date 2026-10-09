@@ -148,34 +148,35 @@ public sealed class JobRunnerTracingTests
       span.GetTagItem("job.attempt").Should().Be(0);
       span.TagObjects.Select(x => x.Key).Should().BeEquivalentTo("job.type", "job.name", "job.parameters", "job.attempt");
       span.Status.Should().Be(ActivityStatusCode.Error);
+      span.StatusDescription.Should().Be("Job failed with exception");
       span.Events.Select(x => x.Name).Should().Equal("Job Started", "exception");
+      span.Events.Last().Tags.Should().Contain(new KeyValuePair<string, object?>("exception.message", "tracing failure"));
    }
 
    private static ActivityListener ListenToOwnSpans(TestJob.Parameters parameters, ConcurrentQueue<OfferedSpan> offered, ActivitySamplingResult ownResult)
    {
-      var listener = new ActivityListener {
-         ShouldListenTo = source => source.Name == JobRunnerService.ActivitySourceName,
-         Sample = (ref ActivityCreationOptions<ActivityContext> options) => {
-            var tags = (options.Tags ?? []).ToDictionary(x => x.Key, x => x.Value);
+      return ListenToJobSource((ref ActivityCreationOptions<ActivityContext> options) => {
+         var tags = (options.Tags ?? []).ToDictionary(x => x.Key, x => x.Value);
 
-            if (!tags.TryGetValue("job.parameters", out var tagged) || !ReferenceEquals(tagged, parameters))
-               return ActivitySamplingResult.None;
+         if (!tags.TryGetValue("job.parameters", out var tagged) || !ReferenceEquals(tagged, parameters))
+            return ActivitySamplingResult.None;
 
-            offered.Enqueue(new OfferedSpan(options.Name, options.Kind, tags));
-            return ownResult;
-         }
-      };
-
-      ActivitySource.AddActivityListener(listener);
-      return listener;
+         offered.Enqueue(new OfferedSpan(options.Name, options.Kind, tags));
+         return ownResult;
+      });
    }
 
    private static ActivityListener RecordOwnStoppedSpans(ConcurrentQueue<Activity> stopped)
    {
+      return ListenToJobSource((ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded, stopped.Enqueue);
+   }
+
+   private static ActivityListener ListenToJobSource(SampleActivity<ActivityContext> sample, Action<Activity>? activityStopped = null)
+   {
       var listener = new ActivityListener {
          ShouldListenTo = source => source.Name == JobRunnerService.ActivitySourceName,
-         Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-         ActivityStopped = stopped.Enqueue
+         Sample = sample,
+         ActivityStopped = activityStopped
       };
 
       ActivitySource.AddActivityListener(listener);

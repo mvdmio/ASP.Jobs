@@ -183,6 +183,8 @@ internal sealed class InMemoryJobStorage : IJobStorage
 
    /// <summary>
    ///    Copies the jobs under the queue lock, so a reader never enumerates a dictionary that the runner is changing.
+   ///    Blocks while it waits for the lock, so only the test-only <see cref="ScheduledJobs"/> and
+   ///    <see cref="InProgressJobs"/> properties use it.
    /// </summary>
    private JobStoreItem[] Snapshot(IEnumerable<JobStoreItem> jobs)
    {
@@ -198,14 +200,31 @@ internal sealed class InMemoryJobStorage : IJobStorage
       }
    }
 
+   /// <summary>
+   ///    Copies the jobs under the queue lock, so a reader never enumerates a dictionary that the runner is changing.
+   /// </summary>
+   private async Task<IEnumerable<JobStoreItem>> SnapshotAsync(IEnumerable<JobStoreItem> jobs, CancellationToken ct)
+   {
+      await _jobQueueLock.WaitAsync(ct);
+
+      try
+      {
+         return jobs.ToArray();
+      }
+      finally
+      {
+         _jobQueueLock.Release();
+      }
+   }
+
    public Task<IEnumerable<JobStoreItem>> GetScheduledJobsAsync(CancellationToken ct = default)
    {
-      return Task.FromResult(ScheduledJobs);
+      return SnapshotAsync(_scheduledJobs.Values, ct);
    }
 
    public Task<IEnumerable<JobStoreItem>> GetInProgressJobsAsync(CancellationToken ct = default)
    {
-      return Task.FromResult(InProgressJobs);
+      return SnapshotAsync(_inProgressJobs.Values, ct);
    }
 
    public async Task DeleteJobByIdAsync(Guid jobId, CancellationToken ct = default)
