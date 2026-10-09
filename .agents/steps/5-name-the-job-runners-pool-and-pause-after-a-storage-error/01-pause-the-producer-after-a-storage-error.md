@@ -1,6 +1,6 @@
 # 01 — Pause the producer after a storage error
 
-Status: pending
+Status: built
 Depends on: none
 
 ## What to build
@@ -45,3 +45,15 @@ Projects: `src/mvdmio.ASP.Jobs`, `test/mvdmio.ASP.Jobs.Tests.Unit`, `test/mvdmio
 - [ ] The existing `JobRunnerServiceTests`, `JobRunnerConcurrencyTests` and `JobRunnerRetryTests` still pass unchanged.
 - [ ] The README has the `## PostgreSQL storage` section with the backoff note.
 - [ ] `dotnet build`, then `dotnet test`, run one after the other, pass for every project on the `Projects:` line. The integration tests need Docker.
+
+## Outcome
+
+- `JobRunnerService.ProduceJobsAsync` counts consecutive fetch errors (saturating at `int.MaxValue`), resets the count after any fetch that returns, and after each logged error awaits `Task.Delay(GetStorageErrorBackoff(count), ct)`; a cancelled delay breaks the loop like any other cancellation (writer completed, nothing logged).
+- The pure wait function is `internal static TimeSpan JobRunnerService.GetStorageErrorBackoff(int consecutiveErrors)` in `src/mvdmio.ASP.Jobs/Internals/JobRunnerService.cs`; it throws `ArgumentOutOfRangeException` for counts below 1.
+- Tests: `test/mvdmio.ASP.Jobs.Tests.Unit/JobRunnerStorageErrorBackoffTests.cs` (wait sequence, handful of attempts in 3.5 s, reset after success, prompt stop during a wait). New test helper `test/mvdmio.ASP.Jobs.Tests.Unit/Utils/RecordingLogger.cs` records log entries. `JobRunnerHarness` is unchanged.
+- README: new `## PostgreSQL storage` section, placed after `## Initialization`; Step 02 adds the pool name there.
+- Footprint drift: none.
+
+Safety fact: after a fetch error the producer waits 1, 2, 4 … 30 s before the next fetch, resets after a successful fetch, and a stop during the wait returns at once; if false, a Postgres outage turns back into a tight loop of connection attempts and error logs, or shutdown hangs for up to 30 s (rung 3)
+Proof: `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~JobRunnerStorageErrorBackoffTests"` exit 0 — Passed!  - Failed:     0, Passed:    12, Skipped:     0, Total:    12
+Merge risk: easy — reverting the commit restores the immediate retry; nothing persisted or published; affects hosts whose storage fails (job pickup resumes up to 30 s after recovery)

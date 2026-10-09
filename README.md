@@ -87,6 +87,14 @@ await serviceProvider.InitializeJobsAsync();
 Scheduling a job before Initialization has completed throws `JobStorageNotInitializedException` with an actionable
 message — storage is never migrated lazily as a side effect of scheduling.
 
+## PostgreSQL storage
+
+Store jobs in PostgreSQL with `UsePostgresStorage(applicationName, connectionString)`.
+
+After a storage error, for example while PostgreSQL restarts or refuses new connections, the job runner waits 1 second
+before it tries again. Each further consecutive error doubles the wait, up to 30 seconds. A successful fetch resets the
+wait, and shutting the app down cuts it short.
+
 ## Scheduled jobs (CRON)
 
 You can schedule any job to run repeatedly using CRON expressions.

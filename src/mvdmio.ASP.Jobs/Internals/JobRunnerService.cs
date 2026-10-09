@@ -97,6 +97,8 @@ internal sealed class JobRunnerService : BackgroundService
    /// </summary>
    private async Task ProduceJobsAsync(ChannelWriter<JobStoreItem> writer, CancellationToken ct)
    {
+      var consecutiveStorageErrors = 0;
+
       try
       {
          while (!ct.IsCancellationRequested)
@@ -104,6 +106,7 @@ internal sealed class JobRunnerService : BackgroundService
             try
             {
                var job = await _jobStorage.WaitForNextJobAsync(ct);
+               consecutiveStorageErrors = 0;
                
                if (job is null)
                   continue;
@@ -118,6 +121,20 @@ internal sealed class JobRunnerService : BackgroundService
             catch (Exception ex)
             {
                _logger.LogError(ex, "Error while fetching next job from storage");
+
+               // Pause before the next attempt so a storage outage does not become a tight loop of connection attempts.
+               // The delay observes the stopping token, so shutdown ends the pause at once.
+               consecutiveStorageErrors = consecutiveStorageErrors == int.MaxValue ? int.MaxValue : consecutiveStorageErrors + 1;
+
+               try
+               {
+                  await Task.Delay(GetStorageErrorBackoff(consecutiveStorageErrors), ct);
+               }
+               catch (OperationCanceledException)
+               {
+                  // Expected during shutdown
+                  break;
+               }
             }
          }
       }
@@ -125,6 +142,25 @@ internal sealed class JobRunnerService : BackgroundService
       {
          writer.Complete();
       }
+   }
+
+   /// <summary>
+   ///    Computes how long the producer waits after a storage error: 1 second, doubling on each further consecutive
+   ///    error, capped at 30 seconds.
+   /// </summary>
+   /// <param name="consecutiveErrors">The number of consecutive storage errors, the current one included. At least 1.</param>
+   /// <returns>The wait before the next fetch attempt.</returns>
+   internal static TimeSpan GetStorageErrorBackoff(int consecutiveErrors)
+   {
+      ArgumentOutOfRangeException.ThrowIfLessThan(consecutiveErrors, 1);
+
+      const int maxSeconds = 30;
+
+      // 2^5 = 32 already exceeds the cap, so larger exponents never need computing (and never overflow).
+      var exponent = Math.Min(consecutiveErrors - 1, 5);
+      var seconds = Math.Min(1 << exponent, maxSeconds);
+
+      return TimeSpan.FromSeconds(seconds);
    }
 
    /// <summary>
