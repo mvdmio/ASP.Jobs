@@ -232,18 +232,8 @@ internal sealed class JobRunnerService : BackgroundService
       await using var scope = _services.CreateAsyncScope();
       var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
 
-      // OpenTelemetry tracing
-      using var activity = _openTelemetry.StartActivity();
-
-      if (activity is not null)
-         activity.DisplayName = $"Job: {jobBusItem.JobType.Name}";
-
-      activity?.SetTag("job.type", jobBusItem.JobType.AssemblyQualifiedName);
-      activity?.SetTag("job.name", jobBusItem.Options.JobName);
-      activity?.SetTag("job.group", jobBusItem.Options.Group);
-      activity?.SetTag("job.parameters", jobBusItem.Parameters);
-      activity?.SetTag("job.cron", jobBusItem.CronExpression?.ToString());
-      activity?.SetTag("job.attempt", jobBusItem.Attempt);
+      // OpenTelemetry tracing. The name and tags go in at start, so a sampler can decide by job type.
+      using var activity = _openTelemetry.StartActivity($"Job: {jobBusItem.JobType.Name}", ActivityKind.Internal, parentContext: default, tags: GetJobSpanTags(jobBusItem));
 
       Exception? executionException = null;
       var wasCanceled = false;
@@ -329,6 +319,30 @@ internal sealed class JobRunnerService : BackgroundService
       // Storage finalization / next-occurrence scheduling runs after restore — outside Culture Reapplication.
       if (shouldFinalizeChain)
          await FinalizeChainAsync(jobBusItem, cancellationToken);
+   }
+
+   /// <summary>
+   ///    Builds the job span's start tags. A tag whose value is null is left out, so the span carries the same tags
+   ///    it did when they were set one by one after start.
+   /// </summary>
+   private static List<KeyValuePair<string, object?>> GetJobSpanTags(JobStoreItem jobBusItem)
+   {
+      var tags = new List<KeyValuePair<string, object?>>(6);
+
+      AddTagIfNotNull(tags, "job.type", jobBusItem.JobType.AssemblyQualifiedName);
+      AddTagIfNotNull(tags, "job.name", jobBusItem.Options.JobName);
+      AddTagIfNotNull(tags, "job.group", jobBusItem.Options.Group);
+      AddTagIfNotNull(tags, "job.parameters", jobBusItem.Parameters);
+      AddTagIfNotNull(tags, "job.cron", jobBusItem.CronExpression?.ToString());
+      AddTagIfNotNull(tags, "job.attempt", jobBusItem.Attempt);
+
+      return tags;
+   }
+
+   private static void AddTagIfNotNull(List<KeyValuePair<string, object?>> tags, string key, object? value)
+   {
+      if (value is not null)
+         tags.Add(new KeyValuePair<string, object?>(key, value));
    }
 
    private async Task<bool> RetryJobAsync(JobStoreItem jobBusItem, IJob job, Exception exception, RetryBehavior matchedBehavior, Activity? activity, CancellationToken cancellationToken)

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json.Serialization;
 
 namespace mvdmio.ASP.Jobs.Tests.Unit.Utils;
@@ -16,6 +17,7 @@ public class TestJob : Job<TestJob.Parameters>
    public override async Task<Parameters> ExecuteAsync(Parameters properties, CancellationToken cancellationToken)
    {
       properties.Execute = ObservedCulture.Current;
+      properties.ExecuteActivity = Activity.Current;
 
       if(properties.Delay.HasValue)
          await Task.Delay(properties.Delay.Value, cancellationToken);
@@ -114,6 +116,10 @@ public class TestJob : Job<TestJob.Parameters>
 
       public List<RetryContext> RetryContexts { get; } = [];
       public List<string> HookCallOrder { get; } = [];
+
+      /// <summary>The current span seen inside ExecuteAsync. Not serialised: a span is no job data.</summary>
+      [JsonIgnore]
+      public Activity? ExecuteActivity { get; set; }
 
       public ObservedCulture? Execute { get; set; }
       public ObservedCulture? ExecutedHook { get; set; }
