@@ -62,6 +62,10 @@ _Avoid_: task, work item
 The component that defines *when* a Job should run (now, ASAP, at a time, on a CRON). It never decides what a Job does or how it recovers from failure.
 _Avoid_: dispatcher, queue
 
+**CRON Schedule**:
+The one recurring schedule a Job class has within one application (the application name every Worker Instance of an app passes when it sets up storage). It carries a single CRON expression; a Job that must run at several times writes them as one expression. Scheduling a Job class on a CRON replaces that class's existing CRON Schedule in the same application, whatever expression the old one had, so changing an expression in code never leaves the old one running. Other applications sharing the database keep their own CRON Schedule for a class of the same name, and one-off jobs (now, ASAP, at a time) of the same class are not CRON Schedules and are left alone.
+_Avoid_: cron job (for the schedule itself), recurring job, cron registration
+
 **Retry Policy**:
 A Job's own declaration of which failures are worth retrying and how (per exception type, catch-clause semantics: inheritance matching, first declared match wins). Belongs to the Job, not to scheduling; a retry is a *reschedule through storage* of the same job with an incremented attempt count, not an in-process re-execution.
 _Avoid_: retry options (on the scheduler), error handling
