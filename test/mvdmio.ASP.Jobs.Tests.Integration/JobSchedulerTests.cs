@@ -8,6 +8,7 @@ using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Tests.Integration.Fixtures;
+using mvdmio.ASP.Jobs.Tests.Integration.Jobs;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using Xunit;
 
@@ -27,7 +28,10 @@ public abstract class JobSchedulerTests
    protected JobSchedulerTests()
    {
       _clock = new TestClock();
-      _services = new JobTestServices().Services.BuildServiceProvider();
+
+      var jobTestServices = new JobTestServices();
+      jobTestServices.Services.RegisterJob<TestJob_Underscored>();
+      _services = jobTestServices.Services.BuildServiceProvider();
    }
 
    public sealed class PostgresJobSchedulerTests : JobSchedulerTests, IAsyncLifetime
@@ -55,6 +59,59 @@ public abstract class JobSchedulerTests
       }
 
       public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+      [Fact]
+      public async Task PerformCron_LeavesTheCronScheduleOfAnotherApplicationAlone()
+      {
+         // Arrange - two applications share the database; the other one schedules TestJob on Daily.
+         var otherHarness = new PostgresStorageHarness(_fixture, "other-instance", "other-application");
+         await otherHarness.Storage.InitializeAsync(CancellationToken);
+         var otherScheduler = new JobScheduler(_services, otherHarness.Storage, _clock);
+         await otherScheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.Daily, new TestJob.Parameters(), false, CancellationToken);
+
+         // Act
+         await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.Daily, new TestJob.Parameters(), false, CancellationToken);
+         await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.EverySecond, new TestJob.Parameters(), false, CancellationToken);
+
+         // Assert
+         (await GetJobNamesByApplicationAsync()).Should().Equal(
+            "other-application/cron_TestJob_00***",
+            "test-application/cron_TestJob_******"
+         );
+      }
+
+      [Fact]
+      public async Task PerformCron_ReplacesACronRowStoredWithAnotherAssemblyVersion()
+      {
+         // Arrange - a waiting CRON row of TestJob, as an older build of the assembly stored it. The scheduler cannot
+         // make such a row, because its job_type carries the assembly version that is running now.
+         const string olderBuildJobType = "mvdmio.ASP.Jobs.Tests.Unit.Utils.TestJob, mvdmio.ASP.Jobs.Tests.Unit, Version=0.0.1.0, Culture=neutral, PublicKeyToken=null";
+         await RawJobRows.InsertAsync(
+            _fixture.DatabaseConnection,
+            _harness.Configuration.ApplicationName,
+            "cron_TestJob_*****",
+            _clock.UtcNow,
+            ct: CancellationToken,
+            jobType: olderBuildJobType,
+            cronExpression: "* * * * *"
+         );
+
+         // Act
+         await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.Daily, new TestJob.Parameters(), false, CancellationToken);
+
+         // Assert
+         (await GetJobNamesByApplicationAsync()).Should().Equal("test-application/cron_TestJob_00***");
+      }
+
+      private async Task<string[]> GetJobNamesByApplicationAsync()
+      {
+         var names = await _fixture.DatabaseConnection.Dapper.QueryAsync<string>(
+            "SELECT application_name || '/' || job_name FROM mvdmio.jobs ORDER BY application_name, job_name",
+            ct: CancellationToken
+         );
+
+         return names.ToArray();
+      }
 
       [Fact]
       public async Task PerformAsap_Batch_RaisesExactlyOneJobsUpdatedNotification()
@@ -329,15 +386,16 @@ public abstract class JobSchedulerTests
       // Arrange
       var cronExpression = CronExpression.Daily;
       var job1 = new TestJob.Parameters();
+      var job2 = new TestJob.Parameters { Delay = TimeSpan.FromSeconds(7) };
 
       // Act
       await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(cronExpression, job1, false, CancellationToken);
-      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(cronExpression, job1, false, CancellationToken);
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(cronExpression, job2, false, CancellationToken);
 
       // Assert
       await AssertScheduledJobsAsync(
          new[] {
-            BuildExpectedCron(job1, cronExpression, "cron_TestJob_00***")
+            BuildExpectedCron(job2, cronExpression, "cron_TestJob_00***")
          });
    }
 
@@ -356,9 +414,96 @@ public abstract class JobSchedulerTests
       // Assert
       await AssertScheduledJobsAsync(
          new[] {
-            BuildExpectedCron(job1, cronExpression1, "cron_TestJob_00***"),
             BuildExpectedCron(job1, cronExpression2, "cron_TestJob_******")
          });
+   }
+
+   [Fact]
+   public async Task PerformCron_WithRunImmediately_ReplacesTheCronScheduleWithAnotherExpression()
+   {
+      // Arrange
+      var job1 = new TestJob.Parameters();
+
+      // Act
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.Daily, job1, false, CancellationToken);
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.EverySecond, job1, true, CancellationToken);
+
+      // Assert
+      var expected = BuildExpectedCron(job1, CronExpression.EverySecond, "cron_TestJob_******");
+      await AssertScheduledJobsAsync(
+         new[] {
+            new JobStoreItem {
+               JobType = expected.JobType,
+               Parameters = expected.Parameters,
+               Options = expected.Options,
+               PerformAt = _clock.UtcNow,
+               CronExpression = expected.CronExpression
+            }
+         });
+   }
+
+   [Fact]
+   public async Task PerformCron_WithCultureOverload_ReplacesTheCronScheduleWithAnotherExpression()
+   {
+      // Arrange
+      var job1 = new TestJob.Parameters();
+
+      // Act
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>("0 0 * * *", job1, new CultureInfo("nl-NL"), false, CancellationToken);
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>("0 9,17 * * *", job1, new CultureInfo("nl-NL"), false, CancellationToken);
+
+      // Assert
+      var scheduledJobs = (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).ToArray();
+      scheduledJobs.Select(x => x.Options.JobName).Should().Equal("cron_TestJob_09,17***");
+   }
+
+   [Fact]
+   public async Task PerformCron_LeavesOneOffJobsOfTheSameClassAlone()
+   {
+      // Arrange
+      var asapJob = new TestJob.Parameters { Delay = TimeSpan.FromSeconds(1) };
+      var atJob = new TestJob.Parameters { Delay = TimeSpan.FromSeconds(2) };
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(asapJob, CancellationToken);
+      await _scheduler.PerformAtAsync<TestJob, TestJob.Parameters>(_clock.UtcNow.AddHours(1), atJob, CancellationToken);
+
+      // Act
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.Daily, new TestJob.Parameters(), false, CancellationToken);
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.EverySecond, new TestJob.Parameters(), false, CancellationToken);
+
+      // Assert
+      var scheduledJobs = (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).ToArray();
+      scheduledJobs.Where(x => x.CronExpression is null).Select(x => x.Parameters).Should().BeEquivalentTo(new object[] { asapJob, atJob });
+      scheduledJobs.Where(x => x.CronExpression is not null).Select(x => x.Options.JobName).Should().Equal("cron_TestJob_******");
+   }
+
+   [Fact]
+   public async Task PerformCron_LeavesACronRunThatAWorkerInstanceHasStartedAlone()
+   {
+      // Arrange - the Daily occurrence is due now and a Worker Instance has started it.
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.Daily, new TestJob.Parameters(), true, CancellationToken);
+      var startedJob = await _jobStorage.WaitForNextJobAsync(CancellationToken);
+      startedJob.Should().NotBeNull();
+
+      // Act
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.EverySecond, new TestJob.Parameters(), false, CancellationToken);
+
+      // Assert
+      (await _jobStorage.GetInProgressJobsAsync(CancellationToken)).Select(x => x.Options.JobName).Should().Equal("cron_TestJob_00***");
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Select(x => x.Options.JobName).Should().Equal("cron_TestJob_******");
+   }
+
+   [Fact]
+   public async Task PerformCron_LeavesTheCronScheduleOfAClassWhoseNameStartsWithThisClassNameAlone()
+   {
+      // Arrange - TestJob_Underscored has the CRON row name cron_TestJob_Underscored_00***.
+      await _scheduler.PerformCronAsync<TestJob_Underscored, TestJob.Parameters>(CronExpression.Daily, new TestJob.Parameters(), false, CancellationToken);
+
+      // Act
+      await _scheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.EverySecond, new TestJob.Parameters(), false, CancellationToken);
+
+      // Assert
+      var scheduledJobs = (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).ToArray();
+      scheduledJobs.Select(x => x.Options.JobName).Should().BeEquivalentTo("cron_TestJob_Underscored_00***", "cron_TestJob_******");
    }
 
    private JobStoreItem BuildExpectedCron(TestJob.Parameters parameters, CronExpression cron, string jobName) =>

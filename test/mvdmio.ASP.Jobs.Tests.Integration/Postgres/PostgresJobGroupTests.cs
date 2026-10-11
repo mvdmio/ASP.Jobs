@@ -341,7 +341,7 @@ public sealed class PostgresJobGroupTests : IAsyncLifetime
    public async Task WaitForNextJob_ReturnsGroupMate_WhenAGroupedUnresolvableJobIsDueAhead()
    {
       // Arrange
-      await UnresolvableJobRows.InsertAsync(_db, _harness.Configuration.ApplicationName, "unresolvable", Clock.UtcNow.AddMinutes(-2), group: Group, ct: CancellationToken);
+      await RawJobRows.InsertAsync(_db, _harness.Configuration.ApplicationName, "unresolvable", Clock.UtcNow.AddMinutes(-2), group: Group, ct: CancellationToken);
       var groupMate = JobStoreItemFactory.MakeTestJob(group: Group, performAt: Clock.UtcNow.AddMinutes(-1));
       await Storage.ScheduleJobAsync(groupMate, CancellationToken);
 
@@ -358,7 +358,7 @@ public sealed class PostgresJobGroupTests : IAsyncLifetime
    public async Task WaitForNextJob_NotifiesOnlyForAGroupedJob_WhenItDeletesAnUnresolvableJobPastItsGrace(string? group, int expectedNotifications)
    {
       // Arrange
-      await UnresolvableJobRows.InsertAsync(_db, _harness.Configuration.ApplicationName, "unresolvable", Clock.UtcNow, group, Clock.UtcNow.AddMinutes(-10), CancellationToken);
+      await RawJobRows.InsertAsync(_db, _harness.Configuration.ApplicationName, "unresolvable", Clock.UtcNow, group, Clock.UtcNow.AddMinutes(-10), ct: CancellationToken);
       await using var listener = await JobsUpdatedListener.StartAsync(_fixture.ConnectionString, CancellationToken);
 
       // Act

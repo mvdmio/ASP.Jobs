@@ -61,6 +61,34 @@ internal sealed class InMemoryJobStorage : IJobStorage
       }
    }
 
+   public async Task ScheduleCronJobAsync(JobStoreItem item, CancellationToken ct = default)
+   {
+      await _jobQueueLock.WaitAsync(ct);
+
+      try
+      {
+         // Only _scheduledJobs: a job in _inProgressJobs has been started and stays.
+         var replaced = _scheduledJobs.Values
+            .Where(x => x.CronExpression is not null
+                        && x.Options.JobName != item.Options.JobName
+                        && CronJobNames.IsOfClass(x.Options.JobName, item.JobType))
+            .Select(x => x.Options.JobName)
+            .ToList();
+
+         foreach (var jobName in replaced)
+         {
+            _scheduledJobs.Remove(jobName);
+         }
+
+         _scheduledJobs[item.Options.JobName] = item;
+         SendWakeSignal();
+      }
+      finally
+      {
+         _jobQueueLock.Release();
+      }
+   }
+
    public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
    {
       var itemList = items.ToList();

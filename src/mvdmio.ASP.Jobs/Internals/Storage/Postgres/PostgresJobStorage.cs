@@ -87,14 +87,43 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       return ScheduleJobsAsync([jobItem], ct);
    }
 
+   public async Task ScheduleCronJobAsync(JobStoreItem jobItem, CancellationToken ct = default)
+   {
+      ThrowIfNotInitialized();
+
+      // One wrapper for the whole transaction: a statement on a second wrapper would run outside it. A failure in
+      // the upsert rolls the delete back, so the class keeps its old schedule rather than ending up with none.
+      var db = Db;
+      await db.InTransactionAsync(
+         async () =>
+         {
+            await ReplacedCronRows.DeleteAsync(db, Configuration.ApplicationName, jobItem, ct);
+
+            await UpsertJobsAsync(db, [jobItem], ct);
+         }
+      );
+
+      await JobsUpdatedChannel.NotifyAsync(Db, ct);
+   }
+
    public async Task ScheduleJobsAsync(IEnumerable<JobStoreItem> items, CancellationToken ct = default)
    {
       ThrowIfNotInitialized();
 
+      if (await UpsertJobsAsync(Db, items, ct))
+         await JobsUpdatedChannel.NotifyAsync(Db, ct);
+   }
+
+   /// <summary>
+   ///    Upserts the items on <paramref name="db"/>, so a caller can run it inside its own transaction.
+   /// </summary>
+   /// <returns>False when <paramref name="items"/> is empty and nothing was written.</returns>
+   private async Task<bool> UpsertJobsAsync(DatabaseConnection db, IEnumerable<JobStoreItem> items, CancellationToken ct)
+   {
       // Convert every item before touching the database, so a conversion failure stores nothing.
       var jobData = items.Select(x => JobData.FromJobStoreItem(Configuration.ApplicationName, x)).ToList();
       if (jobData.Count == 0)
-         return;
+         return false;
 
       // One statement cannot upsert the same row twice ("ON CONFLICT DO UPDATE command cannot affect row a second
       // time"), so keep only the last item per job name - the same outcome InMemoryJobStorage gets by keying on it.
@@ -106,7 +135,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
       // One array parameter per column, expanded with unnest, keeps the bind-parameter count fixed whatever the
       // batch size. One statement is atomic, so the batch is stored completely or not at all. The parameters
       // array is typed jsonb[] explicitly: a string[] alone would bind as text[].
-      await Db.Dapper.ExecuteAsync(
+      await db.Dapper.ExecuteAsync(
          """
          INSERT INTO mvdmio.jobs (id, job_type, parameters_json, parameters_type, cron_expression, application_name, job_name, job_group, culture, ui_culture, perform_at)
          SELECT id, job_type, parameters_json, parameters_type, cron_expression, :application_name, job_name, job_group, culture, ui_culture, perform_at
@@ -142,7 +171,7 @@ internal sealed class PostgresJobStorage : IJobStorage, IDisposable, IAsyncDispo
          ct: ct
       );
 
-      await JobsUpdatedChannel.NotifyAsync(Db, ct);
+      return true;
    }
 
    public async Task<JobStoreItem?> WaitForNextJobAsync(CancellationToken ct = default)

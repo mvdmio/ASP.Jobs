@@ -376,8 +376,8 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
       await _db.Dapper.ExecuteAsync(
          "UPDATE mvdmio.jobs SET job_type = :job_type, parameters_type = :parameters_type WHERE id = :id",
          new Dictionary<string, object?> {
-            { "job_type", UnresolvableJobRows.UnresolvableJobType },
-            { "parameters_type", UnresolvableJobRows.UnresolvableParametersType },
+            { "job_type", RawJobRows.UnresolvableJobType },
+            { "parameters_type", RawJobRows.UnresolvableParametersType },
             { "id", jobStoreItem.JobId }
          },
          ct: CancellationToken
@@ -493,7 +493,7 @@ public sealed class PostgresUnresolvableJobTests : IAsyncLifetime
 
    private async Task InsertUnresolvableJobAsync(string jobName, DateTime performAt, DateTime? unresolvableSince = null, CancellationToken? ct = null)
    {
-      await UnresolvableJobRows.InsertAsync(_db, _harness.Configuration.ApplicationName, jobName, performAt, unresolvableSince: unresolvableSince, ct: ct ?? CancellationToken);
+      await RawJobRows.InsertAsync(_db, _harness.Configuration.ApplicationName, jobName, performAt, unresolvableSince: unresolvableSince, ct: ct ?? CancellationToken);
    }
 
    private List<JobData> GetJobsFromDatabase() => _db.Dapper.Query<JobData>("SELECT * FROM mvdmio.jobs").ToList();

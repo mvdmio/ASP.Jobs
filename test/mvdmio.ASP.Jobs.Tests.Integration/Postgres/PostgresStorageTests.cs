@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Cronos;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres;
 using mvdmio.ASP.Jobs.Internals.Storage.Postgres.Data;
@@ -87,6 +88,56 @@ public sealed class PostgresStorageTests : IAsyncLifetime
       var jobs = GetJobsFromDatabase();
       jobs.Should().HaveCount(1);
       jobs.Select(x => x.ToJobStoreItem()).Should().BeEquivalentTo(new[] { jobStoreItem2 });
+   }
+
+   [Fact]
+   public async Task ScheduleCronJob_KeepsTheOldCronSchedule_WhenStoringTheNewOneFails()
+   {
+      // Arrange - the old schedule is stored; the new one cannot be converted, which happens after the old one is deleted.
+      var oldSchedule = JobStoreItemFactory.MakeTestJob(jobName: "cron_TestJob_00***", performAt: Clock.UtcNow.AddDays(1), cronExpression: CronExpression.Daily);
+      await Storage.ScheduleCronJobAsync(oldSchedule, CancellationToken);
+
+      var newSchedule = JobStoreItemFactory.MakeTestJob(jobName: "cron_TestJob_******", performAt: Clock.UtcNow, useNullParameters: true, cronExpression: CronExpression.EverySecond);
+
+      // Act
+      var action = () => Storage.ScheduleCronJobAsync(newSchedule, CancellationToken);
+
+      // Assert - the exception type is incidental; what matters is that the old schedule is still there.
+      await action.Should().ThrowAsync<Exception>();
+      GetJobsFromDatabase().Should().ContainSingle().Which.JobName.Should().Be("cron_TestJob_00***");
+   }
+
+   [Fact]
+   public async Task ScheduleCronJob_KeepsAWaitingRowWithoutACronExpression_EvenWhenItsNameLooksLikeACronRowOfTheClass()
+   {
+      // Arrange - a one-off row that happens to carry a CRON row name of TestJob.
+      await Storage.ScheduleJobAsync(JobStoreItemFactory.MakeTestJob(jobName: "cron_TestJob_00***", performAt: Clock.UtcNow), CancellationToken);
+
+      var newSchedule = JobStoreItemFactory.MakeTestJob(jobName: "cron_TestJob_******", performAt: Clock.UtcNow, cronExpression: CronExpression.EverySecond);
+
+      // Act
+      await Storage.ScheduleCronJobAsync(newSchedule, CancellationToken);
+
+      // Assert
+      GetJobsFromDatabase().Select(x => x.JobName).Should().BeEquivalentTo("cron_TestJob_00***", "cron_TestJob_******");
+   }
+
+   [Fact]
+   public async Task ScheduleCronJob_SendsExactlyOneNotification_AfterTheScheduleIsStored()
+   {
+      // Arrange
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+      cts.CancelAfter(TimeSpan.FromSeconds(5));
+      await using var listener = await JobsUpdatedListener.StartAsync(_fixture.ConnectionString, cts.Token);
+
+      var schedule = JobStoreItemFactory.MakeTestJob(jobName: "cron_TestJob_******", performAt: Clock.UtcNow, cronExpression: CronExpression.EverySecond);
+
+      // Act
+      await Storage.ScheduleCronJobAsync(schedule, cts.Token);
+
+      // Assert
+      var notifications = await listener.CountNotificationsAsync(TimeSpan.FromMilliseconds(500), cts.Token);
+      notifications.Should().Be(1);
    }
 
    [Fact]

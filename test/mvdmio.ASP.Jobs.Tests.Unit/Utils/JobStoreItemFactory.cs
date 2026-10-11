@@ -1,3 +1,4 @@
+using Cronos;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 
 namespace mvdmio.ASP.Jobs.Tests.Unit.Utils;
@@ -12,6 +13,7 @@ internal static class JobStoreItemFactory
    /// Builds a <see cref="JobStoreItem"/> wrapping <see cref="TestJob"/>.
    /// When <paramref name="jobName"/> is null a new GUID is used (matching the production default).
    /// When <paramref name="useNullParameters"/> is true the <see cref="JobStoreItem.Parameters"/> property is set to null.
+   /// When <paramref name="cronExpression"/> is given the item is a CRON job.
    /// </summary>
    public static JobStoreItem MakeTestJob(
       string? jobName = null,
@@ -19,7 +21,8 @@ internal static class JobStoreItemFactory
       DateTime? performAt = null,
       TestJob.Parameters? parameters = null,
       bool useNullParameters = false,
-      int attempt = 0)
+      int attempt = 0,
+      CronExpression? cronExpression = null)
    {
       var options = new JobScheduleOptions {
          Group = group
@@ -37,7 +40,8 @@ internal static class JobStoreItemFactory
             },
          Options = options,
          PerformAt = performAt ?? DateTime.UtcNow,
-         Attempt = attempt
+         Attempt = attempt,
+         CronExpression = cronExpression
       };
    }
 }

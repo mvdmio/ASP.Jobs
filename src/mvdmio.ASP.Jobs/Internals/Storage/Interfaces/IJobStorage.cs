@@ -30,6 +30,18 @@ internal interface IJobStorage
    Task ScheduleJobAsync(JobStoreItem jobItem, CancellationToken ct = default);
 
    /// <summary>
+   ///    Schedules a job on a CRON and removes the Job class's other CRON Schedule rows in the same application: every
+   ///    row that carries a CRON expression, is waiting to run, is named as a CRON row of the same class
+   ///    (<see cref="CronJobNames"/>) and has another name than <paramref name="jobItem"/>. Rows that a Worker Instance
+   ///    has started, one-off jobs and rows of other classes or applications stay. The new schedule is stored as
+   ///    <see cref="ScheduleJobAsync"/> stores it, and the removal and the write succeed or fail together.
+   /// </summary>
+   /// <param name="jobItem">The CRON job item to schedule.</param>
+   /// <param name="ct">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
+   Task ScheduleCronJobAsync(JobStoreItem jobItem, CancellationToken ct = default);
+
+   /// <summary>
    ///    Schedules multiple jobs for execution in one write: either every item is stored or none is. When two items
    ///    share a job name, the last one wins. An empty batch stores nothing and wakes no waiter.
    /// </summary>

@@ -201,6 +201,10 @@ public interface IJobScheduler
    /// <summary>
    ///    Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
+   /// <remarks>
+   ///    This replaces the CRON schedule that the job class already has in this application, also when that schedule has
+   ///    another CRON expression. A job that must run at several times writes them as one CRON expression.
+   /// </remarks>
    /// <typeparam name="TJob">The type of job to execute.</typeparam>
    /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
    /// <param name="cronExpression">The CRON expression defining the schedule.</param>
@@ -215,6 +219,9 @@ public interface IJobScheduler
    /// <summary>
    ///    Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
+   /// <remarks>
+   ///    <inheritdoc cref="PerformCronAsync{TJob,TParameters}(string,TParameters,bool,CancellationToken)" path="/remarks/node()"/>
+   /// </remarks>
    /// <typeparam name="TJob">The type of job to execute.</typeparam>
    /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
    /// <param name="cronExpression">The CRON expression defining the schedule.</param>
@@ -229,6 +236,9 @@ public interface IJobScheduler
    /// <summary>
    ///    Schedule a job to be performed repeatedly on a given CRON schedule, running under the given culture on every occurrence.
    /// </summary>
+   /// <remarks>
+   ///    <inheritdoc cref="PerformCronAsync{TJob,TParameters}(string,TParameters,bool,CancellationToken)" path="/remarks/node()"/>
+   /// </remarks>
    /// <typeparam name="TJob">The type of job to execute.</typeparam>
    /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
    /// <param name="cronExpression">The CRON expression defining the schedule.</param>
@@ -244,6 +254,9 @@ public interface IJobScheduler
    /// <summary>
    ///    Schedule a job to be performed repeatedly on a given CRON schedule, running under the given culture on every occurrence.
    /// </summary>
+   /// <remarks>
+   ///    <inheritdoc cref="PerformCronAsync{TJob,TParameters}(string,TParameters,bool,CancellationToken)" path="/remarks/node()"/>
+   /// </remarks>
    /// <typeparam name="TJob">The type of job to execute.</typeparam>
    /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
    /// <param name="cronExpression">The CRON expression defining the schedule.</param>

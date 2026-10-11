@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-11: One CRON schedule per job class
+Scheduling a job class with any `PerformCronAsync` overload now replaces that class's earlier CRON schedule in the same application, so changing a CRON expression in code and restarting the app is enough and the old expression stops running; this is a breaking change in 5.0.0, because a class can no longer run on two CRON expressions in one application, and to run a job at several times you write one expression such as `0 9,17 * * *`. The old schedule is removed when the app schedules the class at startup, including schedules left by version 4.x. Other applications' schedules, one-off jobs of the same class, and a CRON job that is running right now are left alone, and in-memory storage follows the same rule.
+
 ## 2026-10-10: PostgreSQL storage now honours job groups
 With PostgreSQL storage, jobs that share a `Group` now run one at a time across every worker process of the same application, in the order they are due, as in-memory storage already did; before, every due job in a group could run at once and take every job slot. The next job in a group starts as soon as the running one finishes, is rescheduled for a retry, or is released at shutdown, but if a worker process stops without shutting down cleanly while it runs a grouped job, the group waits until that process is found stopped, about five to six minutes after its last heartbeat. Idle worker processes now also check the database at least every 30 seconds even when nothing is due, and no longer check over and over without pause while another application's jobs are due.
 

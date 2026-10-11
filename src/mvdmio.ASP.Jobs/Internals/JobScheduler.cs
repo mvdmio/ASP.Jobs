@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Cronos;
 using Microsoft.Extensions.DependencyInjection;
+using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Utils;
@@ -361,7 +362,9 @@ internal sealed class JobScheduler : IJobScheduler
 
          var normalizedCronExpression = cronExpression.ToString().Replace(" ", string.Empty);
          var scheduleOptions = new JobScheduleOptions {
-            JobName = $"cron_{typeof(TJob).Name}_{normalizedCronExpression}" // CRON jobs may not be scheduled twice.
+            // The name carries the class and the expression: scheduling the same expression again takes the same row, and
+            // scheduling another expression replaces the class's other CRON rows (see IJobStorage.ScheduleCronJobAsync).
+            JobName = CronJobNames.For(typeof(TJob), normalizedCronExpression)
          };
 
          if (runImmediately)
@@ -376,7 +379,7 @@ internal sealed class JobScheduler : IJobScheduler
                UICultureName = uiCultureName
             };
 
-            await _jobStorage.ScheduleJobAsync(jobItem, ct);
+            await _jobStorage.ScheduleCronJobAsync(jobItem, ct);
          }
          else
          {
@@ -394,7 +397,7 @@ internal sealed class JobScheduler : IJobScheduler
                UICultureName = uiCultureName
             };
 
-            await _jobStorage.ScheduleJobAsync(jobItem, ct);
+            await _jobStorage.ScheduleCronJobAsync(jobItem, ct);
          }
 
          Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, parameters, cronExpression.ToString());

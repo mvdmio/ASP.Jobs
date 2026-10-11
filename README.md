@@ -111,13 +111,19 @@ done during application startup.
 
 ```csharp
 var jobScheduler = application.Services.GetRequiredService<IJobScheduler>();
-jobScheduler.PerformCronAsync<MyJob>("* * * * * *", new MyJobParameters()); // Run every second
-jobScheduler.PerformCronAsync<MyJob>("* * * * *", new MyJobParameters());   // Run every minute
-jobScheduler.PerformCronAsync<MyJob>("*/5 * * * *", new MyJobParameters()); // Run every 5 minutes
-jobScheduler.PerformCronAsync<MyJob>("0 * * * *", new MyJobParameters());   // Run once an hour at the beginning of the hour
-jobScheduler.PerformCronAsync<MyJob>("0 0 * * *", new MyJobParameters());   // Run once a day at midnight
-jobScheduler.PerformCronAsync<MyJob>("0 0 * * 0", new MyJobParameters());   // Run once a week at midnight on Sunday morning
-jobScheduler.PerformCronAsync<MyJob>("0 0 1 * *", new MyJobParameters());   // Run once a month at midnight of the first day of the month
+jobScheduler.PerformCronAsync<MyJob, MyJobParameters>("*/5 * * * *", new MyJobParameters()); // Run every 5 minutes
+```
+
+A job class has one CRON schedule per application. Scheduling a class again replaces its existing CRON schedule, also
+when the new CRON expression differs from the old one. To change when a job runs, edit the expression and restart the
+application: the old schedule is gone once the application has scheduled the job again at startup. One-off jobs of the
+same class, a run that is in progress, and the CRON schedules of other applications that share the database are left
+alone.
+
+A job that must run at several times writes them as one CRON expression:
+
+```csharp
+jobScheduler.PerformCronAsync<MyJob, MyJobParameters>("0 9,17 * * *", new MyJobParameters()); // Run at 09:00 and 17:00
 ```
 
 ## Culture
