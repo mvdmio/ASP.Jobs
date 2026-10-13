@@ -78,6 +78,14 @@ _Avoid_: run (ambiguous between attempt and chain)
 The maximum number of retries a matched RetryBehavior allows for one Execution Chain (excluding the first attempt). Depleting it ends the chain in failure.
 _Avoid_: attempt limit (ambiguous about whether the first attempt counts)
 
+**Job Parameters**:
+The data a client hands the Scheduler for one execution of a Job, stored with it until it runs. The library treats every value in it as possibly secret: it never writes a value into a log line or a trace unless that value is a Logged Parameter.
+_Avoid_: arguments, payload
+
+**Logged Parameter**:
+A property of the Job Parameters that the client has marked as safe to show, such as the id of the record the Job works on. Only Logged Parameters appear in the library's log lines and traces; an unmarked property never does.
+_Avoid_: loggable field, allowlisted property
+
 ## Flagged ambiguities
 
 - **"Initialization" historically meant two different things.** `PostgresInitializationService` performed *Instance Registration*, while the actual *Initialization* (migrations) happened lazily inside storage. Going forward, "Initialization" means migrations only; instance announcement is always called *Instance Registration*.
