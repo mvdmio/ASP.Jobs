@@ -85,6 +85,10 @@ public class TestJob : Job<TestJob.Parameters>
 
    public class Parameters
    {
+      /// <summary>A Logged Parameter, unique per instance, so a test can find its own log lines and span.</summary>
+      [LoggedParameter]
+      public Guid Id { get; set; } = Guid.NewGuid();
+
       public TimeSpan? Delay { get; set; }
       public Exception? ThrowOnExecute { get; set; }
 

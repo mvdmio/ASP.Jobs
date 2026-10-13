@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using mvdmio.ASP.Jobs.Internals;
@@ -19,13 +20,15 @@ internal sealed class JobRunnerHarness
    public JobRunnerService Runner { get; }
    public TestJobRetryPolicyProvider RetryPolicyProvider { get; }
 
-   public JobRunnerHarness(int maxConcurrentJobs = 10, int jobChannelCapacity = 50)
+   public JobRunnerHarness(int maxConcurrentJobs = 10, int jobChannelCapacity = 50, ILogger<JobRunnerService>? runnerLogger = null)
    {
       Clock = new TestClock();
       Storage = new InMemoryJobStorage(Clock);
 
       var services = new JobTestServices().Services;
       services.RegisterJob<CultureChildSchedulingJob>();
+      services.RegisterJob<LoggedParametersJob>();
+      services.RegisterJob<UnmarkedParametersJob>();
       services.AddSingleton<IJobStorage>(Storage);
       // Register IJobScheduler so jobs that schedule further jobs (e.g. CultureChildSchedulingJob) can resolve it.
       services.AddSingleton<IJobScheduler>(sp => new JobScheduler(sp, Storage, Clock));
@@ -39,7 +42,7 @@ internal sealed class JobRunnerHarness
       });
 
       Scheduler = (JobScheduler)serviceProvider.GetRequiredService<IJobScheduler>();
-      Runner = new JobRunnerService(serviceProvider, options, NullLogger<JobRunnerService>.Instance, Clock);
+      Runner = new JobRunnerService(serviceProvider, options, runnerLogger ?? NullLogger<JobRunnerService>.Instance, Clock);
    }
 
    /// <summary>

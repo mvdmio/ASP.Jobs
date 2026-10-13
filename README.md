@@ -39,6 +39,20 @@ public class MyJob : Job<MyJobParameters>
 }
 ```
 
+The library logs and traces no Job Parameters by default: its log lines and the job's trace contain none of your Job Parameters unless you mark them. To see which record a job worked on, mark a property as a Logged Parameter, typically an id. For example, `MyJobParameters` could instead look like this:
+
+```csharp
+public class MyJobParameters
+{
+   [LoggedParameter]
+   public int RecordId { get; set; }
+
+   public string Secret { get; set; } = string.Empty; // Not marked: never appears in a log line or on the trace.
+}
+```
+
+Only marked properties appear in the log lines and as `job.parameters.<property path>` tags on the job's trace. A marked property that holds an object or struct, or a collection or dictionary of them, shows only the marked properties of those objects and structs; collections of plain values such as numbers and strings show as they are. The Job Parameters are still stored with the job and handed to it in full when it runs.
+
 4. Register the job in your DI container:
 
 ```csharp

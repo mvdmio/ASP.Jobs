@@ -10,8 +10,8 @@ namespace mvdmio.ASP.Jobs.Tests.Unit;
 
 /// <summary>
 /// Tests for the job span on the <c>mvdmio.ASP.Jobs</c> activity source, as an <see cref="ActivityListener"/> sees it.
-/// A listener hears the whole process, so each test matches only the spans whose <c>job.parameters</c> tag holds its
-/// own <see cref="TestJob.Parameters"/> instance.
+/// A listener hears the whole process, so each test matches only the spans whose <c>job.parameters.Id</c> tag holds the
+/// Logged Parameter <see cref="TestJob.Parameters.Id"/> of its own <see cref="TestJob.Parameters"/> instance.
 /// </summary>
 public sealed class JobRunnerTracingTests
 {
@@ -52,7 +52,8 @@ public sealed class JobRunnerTracingTests
       span.Tags.Should().Contain("job.type", _testJobType);
       span.Tags.Should().Contain("job.name", "tracing-job");
       span.Tags.Should().Contain("job.group", "tracing-group");
-      span.Tags["job.parameters"].Should().BeSameAs(parameters);
+      span.Tags.Should().Contain("job.parameters.Id", parameters.Id);
+      span.Tags.Should().NotContainKey("job.parameters");
       span.Tags.Should().Contain("job.attempt", 0);
       span.Tags.Should().NotContainKey("job.cron");
    }
@@ -114,7 +115,7 @@ public sealed class JobRunnerTracingTests
       await _harness.RunAndDrainAsync(CancellationToken);
 
       // Assert
-      var span = stopped.Should().ContainSingle(x => ReferenceEquals(x.GetTagItem("job.parameters"), parameters)).Subject;
+      var span = stopped.Should().ContainSingle(x => Equals(x.GetTagItem("job.parameters.Id"), parameters.Id)).Subject;
       span.DisplayName.Should().Be("Job: TestJob");
       span.OperationName.Should().Be("Job: TestJob");
       span.Kind.Should().Be(ActivityKind.Internal);
@@ -123,7 +124,7 @@ public sealed class JobRunnerTracingTests
       span.GetTagItem("job.attempt").Should().Be(0);
       span.GetTagItem("job.group").Should().BeNull("a job with no group has no job.group tag");
       span.GetTagItem("job.cron").Should().BeNull("a job with no CRON expression has no job.cron tag");
-      span.TagObjects.Select(x => x.Key).Should().BeEquivalentTo("job.type", "job.name", "job.parameters", "job.attempt");
+      span.TagObjects.Select(x => x.Key).Should().BeEquivalentTo("job.type", "job.name", "job.parameters.Id", "job.attempt");
       span.Status.Should().Be(ActivityStatusCode.Ok);
       span.Events.Select(x => x.Name).Should().Equal("Job Started", "Job Completed");
    }
@@ -142,15 +143,56 @@ public sealed class JobRunnerTracingTests
       await _harness.RunAndDrainAsync(CancellationToken);
 
       // Assert
-      var span = stopped.Should().ContainSingle(x => ReferenceEquals(x.GetTagItem("job.parameters"), parameters)).Subject;
+      var span = stopped.Should().ContainSingle(x => Equals(x.GetTagItem("job.parameters.Id"), parameters.Id)).Subject;
       span.DisplayName.Should().Be("Job: TestJob");
       span.GetTagItem("job.type").Should().Be(_testJobType);
       span.GetTagItem("job.attempt").Should().Be(0);
-      span.TagObjects.Select(x => x.Key).Should().BeEquivalentTo("job.type", "job.name", "job.parameters", "job.attempt");
+      span.TagObjects.Select(x => x.Key).Should().BeEquivalentTo("job.type", "job.name", "job.parameters.Id", "job.attempt");
       span.Status.Should().Be(ActivityStatusCode.Error);
       span.StatusDescription.Should().Be("Job failed with exception");
       span.Events.Select(x => x.Name).Should().Equal("Job Started", "exception");
       span.Events.Last().Tags.Should().Contain(new KeyValuePair<string, object?>("exception.message", "tracing failure"));
+   }
+
+   [Fact]
+   public async Task ExportedSpan_TagsOnlyLoggedParameters_IncludingThoseOfANestedObject()
+   {
+      // Arrange
+      var parameters = new LoggedParametersJob.Parameters();
+      var stopped = new ConcurrentQueue<Activity>();
+      using var listener = RecordOwnStoppedSpans(stopped);
+
+      await _harness.Scheduler.PerformAsapAsync<LoggedParametersJob, LoggedParametersJob.Parameters>(parameters, CancellationToken);
+
+      // Act
+      await _harness.RunAndDrainAsync(CancellationToken);
+
+      // Assert
+      var span = stopped.Should().ContainSingle(x => Equals(x.GetTagItem("job.parameters.Id"), parameters.Id)).Subject;
+      span.GetTagItem("job.parameters.Order.Id").Should().Be(parameters.Order.Id);
+      span.GetTagItem("job.parameters").Should().BeNull("the whole Job Parameters object is never a tag");
+      span.GetTagItem("job.parameters.Order").Should().BeNull("a marked object is tagged by its own Logged Parameters only");
+      span.TagObjects.Select(x => x.Key).Should().BeEquivalentTo("job.type", "job.name", "job.parameters.Id", "job.parameters.Order.Id", "job.attempt");
+      span.TagObjects.Select(x => x.Value).Should().NotContain(x => x is string && (((string)x).Contains(parameters.Secret) || ((string)x).Contains(parameters.Order.Token)));
+   }
+
+   [Fact]
+   public async Task ExportedSpan_HasNoParameterTags_ForJobWithoutLoggedParameters()
+   {
+      // Arrange
+      var parameters = new UnmarkedParametersJob.Parameters();
+      var stopped = new ConcurrentQueue<Activity>();
+      using var listener = RecordOwnStoppedSpans(stopped);
+
+      await _harness.Scheduler.PerformAsapAsync<UnmarkedParametersJob, UnmarkedParametersJob.Parameters>(parameters, CancellationToken);
+
+      // Act
+      await _harness.RunAndDrainAsync(CancellationToken);
+
+      // Assert - the listener hears the whole process, so find the spans of this job type.
+      var spans = stopped.Where(x => (string?)x.GetTagItem("job.type") == typeof(UnmarkedParametersJob).AssemblyQualifiedName).ToList();
+      spans.Should().NotBeEmpty();
+      spans.SelectMany(x => x.TagObjects).Select(x => x.Key).Should().NotContain(x => x.StartsWith("job.parameters"));
    }
 
    private static ActivityListener ListenToOwnSpans(TestJob.Parameters parameters, ConcurrentQueue<OfferedSpan> offered, ActivitySamplingResult ownResult)
@@ -158,7 +200,7 @@ public sealed class JobRunnerTracingTests
       return ListenToJobSource((ref ActivityCreationOptions<ActivityContext> options) => {
          var tags = (options.Tags ?? []).ToDictionary(x => x.Key, x => x.Value);
 
-         if (!tags.TryGetValue("job.parameters", out var tagged) || !ReferenceEquals(tagged, parameters))
+         if (!tags.TryGetValue("job.parameters.Id", out var tagged) || !Equals(tagged, parameters.Id))
             return ActivitySamplingResult.None;
 
          offered.Enqueue(new OfferedSpan(options.Name, options.Kind, tags));

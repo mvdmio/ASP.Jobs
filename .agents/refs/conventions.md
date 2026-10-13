@@ -19,7 +19,7 @@
 
 ## Visibility
 
-- **Public API is minimal** — only `IJob`, `Job<T>`, `IJobScheduler`, and configuration classes are public.
+- **Public API is minimal** — only `IJob`, `Job<T>`, `IJobScheduler`, `LoggedParameterAttribute`, and configuration classes are public.
 - Non-public types live in `Internals/` and are marked `internal`.
 - Test projects get access via `InternalsVisibleTo`.
 

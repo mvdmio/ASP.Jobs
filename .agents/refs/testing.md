@@ -22,7 +22,10 @@ Test stack: **xUnit v3** + **NSubstitute** (mocking) + **AwesomeAssertions** (fl
 | `TestClock` | Controllable time for testing scheduled jobs |
 | `TestJob` | Job with configurable delay and exception behavior |
 | `JobTestServices` | Helper for setting up test DI containers |
-| `RecordingLogger<T>` | Logger that records every entry, to assert which lines were logged and how often |
+| `LoggedParametersJob` | Job whose Job Parameters hold Logged Parameters (one nested) and unmarked secrets, and that throws on request; for asserting what log lines and spans show. Has its own throw switch because `TestJob` lacks the nested Logged Parameter and the secrets |
+| `UnmarkedParametersJob` | Job whose Job Parameters mark nothing as logged, and that throws on request; for asserting that no parameter values are shown |
+| `RecordingLogger<T>` | Logger that records every entry (level, message, exception and the named values of the message template), to assert which lines were logged, how often, and what they show |
+| `SerilogCapture` | Records events on Serilog's static `Log.Logger` (what `JobScheduler` logs through) and restores it on dispose; test classes using it join the `[Collection(SerilogCapture.Name)]` xunit collection and match events by their own unique id |
 
 Reuse these utilities rather than rolling your own.
 

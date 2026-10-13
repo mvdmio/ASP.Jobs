@@ -35,6 +35,7 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
       services.RegisterJob<InternalPropertyModifyingJob>();
       services.RegisterJob<PrivateSetterModifyingJob>();
       services.RegisterJob<FieldModifyingJob>();
+      services.RegisterJob<SecretParametersJob>();
       _services = services.BuildServiceProvider();
 
       _scheduler = new JobScheduler(_services, Storage, Clock);
@@ -141,6 +142,21 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
       var stored = await LoadStoredParametersAsync<FieldModifyingJob.Parameters>();
       stored.PublicValue.Should().Be("public_original");
       stored._modifiedField.Should().Be("modified_during_scheduling");
+   }
+
+   [Fact]
+   public async Task PerformAsap_UnmarkedSecretProperty_ShouldBeStoredAndReturnedInFull()
+   {
+      // Arrange
+      var parameters = new SecretParametersJob.Parameters { Id = 42, Secret = "one-time-token" };
+
+      // Act
+      await _scheduler.PerformAsapAsync<SecretParametersJob, SecretParametersJob.Parameters>(parameters, CancellationToken);
+
+      // Assert
+      var stored = await LoadStoredParametersAsync<SecretParametersJob.Parameters>();
+      stored.Id.Should().Be(42);
+      stored.Secret.Should().Be("one-time-token");
    }
 
    private async Task<T> LoadStoredParametersAsync<T>() where T : class

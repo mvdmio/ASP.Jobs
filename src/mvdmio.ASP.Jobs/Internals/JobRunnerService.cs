@@ -241,6 +241,9 @@ internal sealed class JobRunnerService : BackgroundService
          ? _openTelemetry.StartActivity($"Job: {jobBusItem.JobType.Name}", ActivityKind.Internal, parentContext: default, tags: GetJobSpanTags(jobBusItem))
          : null;
 
+      // Only the Logged Parameters reach the log lines; the Job Parameters themselves never do.
+      var loggedParameters = LoggedParameters.ToDictionary(jobBusItem.Parameters);
+
       Exception? executionException = null;
       var wasCanceled = false;
       var shouldFinalizeChain = false;
@@ -259,7 +262,7 @@ internal sealed class JobRunnerService : BackgroundService
             // fire-and-forget task.
             ApplyCapturedCulture(jobBusItem);
 
-            _logger.LogInformation("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+            _logger.LogInformation("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, loggedParameters);
             activity?.AddEvent(new ActivityEvent("Job Started"));
 
             await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
@@ -269,7 +272,7 @@ internal sealed class JobRunnerService : BackgroundService
 
             var endTime = Stopwatch.GetTimestamp();
             var duration = new TimeSpan(endTime - startTime);
-            _logger.LogInformation("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, jobBusItem.Parameters, duration);
+            _logger.LogInformation("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, loggedParameters, duration);
          }
          catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
          {
@@ -281,7 +284,7 @@ internal sealed class JobRunnerService : BackgroundService
          {
             executionException = e;
 
-            _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, jobBusItem.Parameters);
+            _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, loggedParameters);
 
             activity?.AddException(e);
             activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
@@ -329,18 +332,23 @@ internal sealed class JobRunnerService : BackgroundService
 
    /// <summary>
    ///    Builds the job span's start tags. The collection's indexer leaves out a tag whose value is null, as
-   ///    <see cref="Activity.SetTag"/> does.
+   ///    <see cref="Activity.SetTag"/> does. The Job Parameters add one <c>job.parameters.&lt;property path&gt;</c> tag
+   ///    per Logged Parameter, and no other tag.
    /// </summary>
    private static ActivityTagsCollection GetJobSpanTags(JobStoreItem jobBusItem)
    {
-      return new ActivityTagsCollection {
+      var tags = new ActivityTagsCollection {
          ["job.type"] = jobBusItem.JobType.AssemblyQualifiedName,
          ["job.name"] = jobBusItem.Options.JobName,
          ["job.group"] = jobBusItem.Options.Group,
-         ["job.parameters"] = jobBusItem.Parameters,
          ["job.cron"] = jobBusItem.CronExpression?.ToString(),
          ["job.attempt"] = jobBusItem.Attempt
       };
+
+      foreach (var (path, value) in LoggedParameters.ToFlatDictionary(jobBusItem.Parameters))
+         tags[$"job.parameters.{path}"] = value;
+
+      return tags;
    }
 
    private async Task<bool> RetryJobAsync(JobStoreItem jobBusItem, IJob job, Exception exception, RetryBehavior matchedBehavior, Activity? activity, CancellationToken cancellationToken)

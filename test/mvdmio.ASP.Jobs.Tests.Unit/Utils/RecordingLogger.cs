@@ -16,8 +16,13 @@ internal sealed class RecordingLogger<T> : ILogger<T>
 
    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
    {
-      Entries.Enqueue(new RecordedLogEntry(logLevel, formatter(state, exception), exception));
+      var properties = state is IEnumerable<KeyValuePair<string, object?>> pairs
+         ? pairs.ToDictionary(x => x.Key, x => x.Value)
+         : [];
+
+      Entries.Enqueue(new RecordedLogEntry(logLevel, formatter(state, exception), exception, properties));
    }
 }
 
-internal sealed record RecordedLogEntry(LogLevel Level, string Message, Exception? Exception);
+/// <param name="Properties">The named values of the message template, such as <c>Parameters</c> for <c>{@Parameters}</c>.</param>
+internal sealed record RecordedLogEntry(LogLevel Level, string Message, Exception? Exception, IReadOnlyDictionary<string, object?> Properties);

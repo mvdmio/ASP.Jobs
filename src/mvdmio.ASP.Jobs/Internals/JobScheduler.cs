@@ -51,7 +51,7 @@ internal sealed class JobScheduler : IJobScheduler
       }
       catch (Exception e)
       {
-         Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         LogSchedulingFailed<TJob>(e, parameters);
          
          await job.OnJobFailedAsync(parameters, e, ct);
          
@@ -145,14 +145,19 @@ internal sealed class JobScheduler : IJobScheduler
       }
       catch (Exception e)
       {
-         Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         LogSchedulingFailed<TJob>(e, parameters);
          throw;
       }
    }
 
+   private static void LogSchedulingFailed<TJob>(Exception e, object parameters)
+   {
+      Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters));
+   }
+
    private static void LogScheduledAsap<TJob>(object parameters)
    {
-      Log.Information("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+      Log.Information("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters));
    }
 
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken ct = default)
@@ -241,14 +246,14 @@ internal sealed class JobScheduler : IJobScheduler
       }
       catch (Exception e)
       {
-         Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         LogSchedulingFailed<TJob>(e, parameters);
          throw;
       }
    }
 
    private static void LogScheduledAt<TJob>(object parameters, DateTime performAtUtc)
    {
-      Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, parameters, performAtUtc);
+      Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters), performAtUtc);
    }
 
    /// <summary>
@@ -400,11 +405,11 @@ internal sealed class JobScheduler : IJobScheduler
             await _jobStorage.ScheduleCronJobAsync(jobItem, ct);
          }
 
-         Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, parameters, cronExpression.ToString());
+         Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters), cronExpression.ToString());
       }
       catch (Exception e)
       {
-         Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, parameters);
+         LogSchedulingFailed<TJob>(e, parameters);
          throw;
       }
    }
