@@ -17,7 +17,7 @@ The single component responsible for performing Initialization. Exposed as `IJob
 _Avoid_: initialization service (that name historically meant instance registration)
 
 **Instance Registration**:
-A running worker process announcing itself as a live job processor by writing a row to `job_instances`. Depends on Initialization having already completed.
+A running worker process announcing itself as a live job processor by writing a row to `job_instances`. A Worker Instance announces itself at host start and on each heartbeat, and also when it Claims a job, so a row removed by cleanup returns. Depends on Initialization having already completed.
 _Avoid_: initialization, startup
 
 **Worker Instance**:

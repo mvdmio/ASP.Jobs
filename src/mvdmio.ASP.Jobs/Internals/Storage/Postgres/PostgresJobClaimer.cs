@@ -80,8 +80,9 @@ internal sealed class PostgresJobClaimer
    }
 
    /// <summary>
-   ///    One claim attempt, run inside the caller's transaction on <paramref name="db"/>. A refused attempt writes
-   ///    nothing, so ending its transaction only releases the locks it took.
+   ///    One claim attempt, run inside the caller's transaction on <paramref name="db"/>. A successful attempt also
+   ///    registers this Worker Instance again, in the same transaction. A refused attempt writes nothing, so ending
+   ///    its transaction only releases the locks it took.
    /// </summary>
    private async Task<ClaimAttempt> TryClaimCandidateAsync(DatabaseConnection db, DateTime now, Guid[] skippedJobIds, ISet<string> contendedGroups, CancellationToken ct)
    {
@@ -127,6 +128,23 @@ internal sealed class PostgresJobClaimer
 
       if (candidate.JobGroup is not null && !await TryLockFreeGroupAsync(db, candidate, ct))
          return ClaimAttempt.Contended(candidate.JobGroup);
+
+      // A peer's cleanup may have deleted this instance's row while it was silent, and started_by has a foreign key to
+      // it. Writing the row in the Claim's own transaction means the Claim never points at a missing instance.
+      await db.Dapper.ExecuteAsync(
+         """
+         INSERT INTO mvdmio.job_instances (instance_id, application_name, last_seen_at)
+         VALUES (:instanceId, :applicationName, :lastSeenAt)
+         ON CONFLICT (instance_id) DO UPDATE
+         SET last_seen_at = EXCLUDED.last_seen_at
+         """,
+         new Dictionary<string, object?> {
+            { "instanceId", Configuration.InstanceId },
+            { "applicationName", Configuration.ApplicationName },
+            { "lastSeenAt", now }
+         },
+         ct: ct
+      );
 
       var claimed = await db.Dapper.QueryFirstAsync<JobData>(
          $"""
