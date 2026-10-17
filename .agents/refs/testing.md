@@ -34,8 +34,8 @@ Reuse these utilities rather than rolling your own.
 - Whole solution: `dotnet test`
 - One project (prefer this while iterating — faster, no Docker for unit tests):
   `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj`
-- Single test by method-name substring:
-  `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "Name~SchedulesJobAtUtcTime"`
+- Single test by method-name substring (use `FullyQualifiedName~`; `Name~` matches no tests here and the run exits with "No test matches"):
+  `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~SchedulesJobAtUtcTime"`
 - By fully-qualified name (class/namespace substring):
   `dotnet test test/mvdmio.ASP.Jobs.Tests.Unit/mvdmio.ASP.Jobs.Tests.Unit.csproj --filter "FullyQualifiedName~JobScheduler"`
 - Use `--filter` aggressively; integration tests are slower and need Docker.
