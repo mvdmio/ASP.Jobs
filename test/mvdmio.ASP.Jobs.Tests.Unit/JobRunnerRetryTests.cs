@@ -275,8 +275,13 @@ public sealed class JobRunnerRetryTests
 
       // Act - drive the runner directly rather than RunAndDrainAsync: a CRON chain always leaves one scheduled
       // job behind (the next occurrence), so a "wait until empty" drain would never terminate.
+      // Wait on storage as well as the hook: OnJobExecutedAsync runs before the chain is finalized, and stopping the
+      // runner in between cancels the finalize's storage calls, leaving the job in progress and no next occurrence.
       await _harness.Runner.StartAsync(CancellationToken);
-      await JobRunnerHarness.WaitUntilAsync(() => parameters.Executed, CancellationToken);
+      await JobRunnerHarness.WaitUntilAsync(
+         () => parameters.Executed && !_harness.Storage.InProgressJobs.Any() &&_harness.Storage.ScheduledJobs.Any(),
+         CancellationToken
+      );
       await _harness.Runner.StopAsync(CancellationToken);
 
       // Assert
