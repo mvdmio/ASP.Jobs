@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-21: Batch scheduling takes each job's own options
+`PerformAsapAsync` and `PerformAtAsync` now have batch overloads that take a list of `(Parameters, Options)` pairs, with and without a `CultureInfo`, so that every job in the list keeps its own `JobScheduleOptions` (job name and group). The list is still stored in one write with one `jobs_updated` notification, completely or not at all, where scheduling the same named jobs one by one costs one write and one notification each. A job replaces a waiting job with the same name but never one that has already started, the last job wins when two jobs in one list share a name, and jobs that share a group run one at a time. A list that holds a `null` options value throws `ArgumentNullException` and stores nothing. This is a new feature in 5.2.0; the existing overloads, the storage backends and the database schema are unchanged.
+
 ## 2026-10-17: A Claim after a long outage no longer fails
 With PostgreSQL storage, a worker process that was silent for more than the five-minute instance timeout, for example during a database outage or a long stall, no longer fails to claim a due job with the foreign-key error `jobs_started_by_fkey` (PostgreSQL error `23503`) when another process's cleanup removed its instance row before its next heartbeat. The worker is now registered again by the Claim itself, in the same transaction, so due jobs start as soon as the database is back instead of after the next heartbeat. A worker whose row still exists behaves as before, and nothing changes in the public API or the database schema.
 

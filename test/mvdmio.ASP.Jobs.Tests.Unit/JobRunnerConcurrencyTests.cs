@@ -83,4 +83,27 @@ public sealed class JobRunnerConcurrencyTests
       tracker.TotalJobsFinished.Should().Be(totalJobs);
       tracker.MaxObservedConcurrency.Should().BeGreaterThan(1, "Jobs should execute concurrently when below the max concurrency limit");
    }
+
+   [Fact]
+   public async Task ConcurrentJobs_ScheduledInOneBatchWithTheSameGroup_RunOneAtATime()
+   {
+      // Arrange - ten job slots are free, but the group allows one job at a time.
+      var tracker = new ConcurrencyTracker();
+      var harness = new JobRunnerHarness(maxConcurrentJobs: 10);
+      var jobs = Enumerable.Range(1, 3)
+         .Select(i => (
+            Parameters: new ConcurrencyTrackingJob.Parameters { Tracker = tracker, ExecutionDuration = TimeSpan.FromMilliseconds(50) },
+            Options: new JobScheduleOptions { JobName = $"grouped-{i}", Group = "batch-group" }
+         ))
+         .ToArray();
+
+      await harness.Scheduler.PerformAsapAsync<ConcurrencyTrackingJob, ConcurrencyTrackingJob.Parameters>(jobs, CancellationToken);
+
+      // Act
+      await harness.RunAndDrainAsync(CancellationToken);
+
+      // Assert
+      tracker.TotalJobsFinished.Should().Be(3);
+      tracker.MaxObservedConcurrency.Should().Be(1, "jobs of one group run one at a time");
+   }
 }

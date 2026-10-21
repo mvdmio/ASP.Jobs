@@ -127,6 +127,21 @@ public abstract class JobSchedulerTests
          var notifications = await listener.CountNotificationsAsync(TimeSpan.FromMilliseconds(500), CancellationToken);
          notifications.Should().Be(1);
       }
+
+      [Fact]
+      public async Task PerformAsap_BatchWithOptions_RaisesExactlyOneJobsUpdatedNotification()
+      {
+         // Arrange
+         var jobs = new[] { NamedJob("a", 1, "g"), NamedJob("b", 2, "g"), NamedJob("c", 3, "g") };
+         await using var listener = await JobsUpdatedListener.StartAsync(_fixture.ConnectionString, CancellationToken);
+
+         // Act
+         await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(jobs, CancellationToken);
+
+         // Assert
+         var notifications = await listener.CountNotificationsAsync(TimeSpan.FromMilliseconds(500), CancellationToken);
+         notifications.Should().Be(1);
+      }
    }
 
    public sealed class InMemoryJobSchedulerTests : JobSchedulerTests
@@ -364,6 +379,194 @@ public abstract class JobSchedulerTests
    }
 
    [Fact]
+   public async Task PerformAsap_BatchWithOptions_StoresEveryJobWithItsOwnNameAndGroup()
+   {
+      // Arrange
+      var jobs = new[] { NamedJob("a", 1, "g"), NamedJob("b", 2, "g"), NamedJob("c", 3, "g") };
+
+      // Act
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(jobs, CancellationToken);
+
+      // Assert
+      (await GetStoredJobsAsync()).Should().BeEquivalentTo(
+         [
+            new StoredJob("a", "g", TimeSpan.FromSeconds(1), _clock.UtcNow),
+            new StoredJob("b", "g", TimeSpan.FromSeconds(2), _clock.UtcNow),
+            new StoredJob("c", "g", TimeSpan.FromSeconds(3), _clock.UtcNow)
+         ]
+      );
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithOptions_ReplacesAWaitingJobWithTheSameName()
+   {
+      // Arrange
+      var (waiting, waitingOptions) = NamedJob("a", 1);
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(waiting, waitingOptions, CancellationToken);
+
+      // Act
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>([NamedJob("a", 2)], CancellationToken);
+
+      // Assert
+      (await GetStoredJobsAsync()).Should().BeEquivalentTo([new StoredJob("a", null, TimeSpan.FromSeconds(2), _clock.UtcNow)]);
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithOptions_DoesNotReplaceAJobThatHasStarted()
+   {
+      // Arrange - the job named "a" has been claimed by a Worker Instance.
+      var (started, startedOptions) = NamedJob("a", 1);
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(started, startedOptions, CancellationToken);
+      (await _jobStorage.WaitForNextJobAsync(CancellationToken)).Should().NotBeNull();
+
+      // Act
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>([NamedJob("a", 2)], CancellationToken);
+
+      // Assert - the new job is stored next to the started one.
+      (await GetStoredJobsAsync()).Should().BeEquivalentTo([new StoredJob("a", null, TimeSpan.FromSeconds(2), _clock.UtcNow)]);
+      var inProgress = (await _jobStorage.GetInProgressJobsAsync(CancellationToken)).ToArray();
+      inProgress.Should().ContainSingle().Which.Parameters.Should().BeOfType<TestJob.Parameters>().Which.Delay.Should().Be(TimeSpan.FromSeconds(1));
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithOptions_StoresTheLastJobWhenTwoShareAName()
+   {
+      // Arrange
+      var jobs = new[] { NamedJob("a", 1), NamedJob("a", 2) };
+
+      // Act
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(jobs, CancellationToken);
+
+      // Assert
+      (await GetStoredJobsAsync()).Should().BeEquivalentTo([new StoredJob("a", null, TimeSpan.FromSeconds(2), _clock.UtcNow)]);
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithOptions_ThrowsAndStoresNothing_WhenAJobHasNullOptions()
+   {
+      // Arrange
+      var hookRan = false;
+      var jobs = new List<(TestJob.Parameters Parameters, JobScheduleOptions Options)> {
+         (new TestJob.Parameters { OnJobScheduledCallback = () => hookRan = true }, new JobScheduleOptions { JobName = "a" }),
+         (new TestJob.Parameters(), null!)
+      };
+
+      // Act
+      var action = () => _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(jobs, CancellationToken);
+
+      // Assert
+      await action.Should().ThrowExactlyAsync<ArgumentNullException>().WithParameterName("jobs");
+      hookRan.Should().BeFalse();
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().BeEmpty();
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithOptions_ThrowsAndStoresNothing_WhenAJobHasNullParameters()
+   {
+      // Arrange
+      var jobs = new List<(TestJob.Parameters Parameters, JobScheduleOptions Options)> {
+         NamedJob("a", 1),
+         (null!, new JobScheduleOptions { JobName = "b" })
+      };
+
+      // Act
+      var action = () => _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(jobs, CancellationToken);
+
+      // Assert
+      await action.Should().ThrowExactlyAsync<ArgumentNullException>().WithParameterName("jobs");
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().BeEmpty();
+   }
+
+   [Fact]
+   public async Task PerformAt_BatchWithOptions_StoresEveryJobAtThatTime()
+   {
+      // Arrange
+      var performAt = _clock.UtcNow.AddHours(1);
+      var jobs = new[] { NamedJob("a", 1), NamedJob("b", 2) };
+
+      // Act
+      await _scheduler.PerformAtAsync<TestJob, TestJob.Parameters>(performAt, jobs, CancellationToken);
+
+      // Assert
+      (await GetStoredJobsAsync()).Should().BeEquivalentTo(
+         [
+            new StoredJob("a", null, TimeSpan.FromSeconds(1), performAt),
+            new StoredJob("b", null, TimeSpan.FromSeconds(2), performAt)
+         ]
+      );
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithOptionsAndCulture_StoresEveryJobWithThatCulture()
+   {
+      // Arrange
+      var jobs = new[] { NamedJob("a", 1), NamedJob("b", 2) };
+
+      // Act
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(jobs, new CultureInfo("nl-NL"), CancellationToken);
+
+      // Assert
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().HaveCount(2).And.OnlyContain(x => x.CultureName == "nl-NL" && x.UICultureName == "nl-NL");
+   }
+
+   [Fact]
+   public async Task PerformAt_BatchWithOptionsAndCulture_StoresEveryJobWithThatCultureAtThatTime()
+   {
+      // Arrange
+      var performAt = _clock.UtcNow.AddHours(1);
+      var jobs = new[] { NamedJob("a", 1), NamedJob("b", 2) };
+
+      // Act
+      await _scheduler.PerformAtAsync<TestJob, TestJob.Parameters>(performAt, jobs, new CultureInfo("nl-NL"), CancellationToken);
+
+      // Assert
+      var stored = (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).ToArray();
+      stored.Should().HaveCount(2).And.OnlyContain(x => x.CultureName == "nl-NL" && x.UICultureName == "nl-NL" && x.PerformAt == performAt);
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithOptions_StoresEveryJobWithTheAmbientCultureCapturedBeforeTheCall()
+   {
+      // Arrange
+      var jobs = new[] { NamedJob("a", 1), NamedJob("b", 2) };
+
+      // Act
+      using (new ThreadCultureScope("nl-NL", "fr-FR"))
+      {
+         await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(jobs, CancellationToken);
+      }
+
+      // Assert
+      (await _jobStorage.GetScheduledJobsAsync(CancellationToken)).Should().HaveCount(2).And.OnlyContain(x => x.CultureName == "nl-NL" && x.UICultureName == "fr-FR");
+   }
+
+   [Fact]
+   public async Task PerformAsap_BatchWithOptions_RunsJobsOfOneGroupOneAtATime()
+   {
+      // Arrange
+      var jobs = new[] { NamedJob("a", 1, "g"), NamedJob("b", 2, "g") };
+      await _scheduler.PerformAsapAsync<TestJob, TestJob.Parameters>(jobs, CancellationToken);
+
+      // Act - the first job is claimed and the second one waits for it.
+      var firstClaim = await _jobStorage.WaitForNextJobAsync(CancellationToken);
+      using var blockedCts = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
+      blockedCts.CancelAfter(TimeSpan.FromMilliseconds(500));
+      var blockedClaim = await _jobStorage.WaitForNextJobAsync(blockedCts.Token);
+
+      // Assert
+      firstClaim.Should().NotBeNull();
+      blockedClaim.Should().BeNull();
+
+      // Act - once the first job is finished, the second one is claimed.
+      await _jobStorage.FinalizeJobAsync(firstClaim!, CancellationToken);
+      var secondClaim = await _jobStorage.WaitForNextJobAsync(CancellationToken);
+
+      // Assert
+      secondClaim.Should().NotBeNull();
+      secondClaim!.JobId.Should().NotBe(firstClaim!.JobId);
+   }
+
+   [Fact]
    public async Task PerformCron_Once()
    {
       // Arrange
@@ -518,6 +721,20 @@ public abstract class JobSchedulerTests
    // Each item differs by its Delay, so the equivalency check pairs every stored job with its own parameters.
    private static TestJob.Parameters[] DistinctParameters(int count) =>
       Enumerable.Range(1, count).Select(i => new TestJob.Parameters { Delay = TimeSpan.FromSeconds(i) }).ToArray();
+
+   // The Delay tells the jobs apart, like DistinctParameters does.
+   private static (TestJob.Parameters Parameters, JobScheduleOptions Options) NamedJob(string name, int delaySeconds, string? group = null) =>
+      (new TestJob.Parameters { Delay = TimeSpan.FromSeconds(delaySeconds) }, new JobScheduleOptions { JobName = name, Group = group });
+
+   private async Task<StoredJob[]> GetStoredJobsAsync()
+   {
+      var scheduledJobs = await _jobStorage.GetScheduledJobsAsync(CancellationToken);
+      return scheduledJobs
+         .Select(x => new StoredJob(x.Options.JobName, x.Options.Group, ((TestJob.Parameters)x.Parameters).Delay, x.PerformAt))
+         .ToArray();
+   }
+
+   private sealed record StoredJob(string Name, string? Group, TimeSpan? Delay, DateTime PerformAt);
 
    private async Task AssertBatchScheduledAsync(TestJob.Parameters[] parameters, DateTime expectedPerformAt, string expectedCulture, string expectedUICulture)
    {

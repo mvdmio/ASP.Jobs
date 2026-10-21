@@ -199,6 +199,86 @@ public interface IJobScheduler
       where TParameters : class;
 
    /// <summary>
+   ///    Schedule multiple jobs to be performed as soon as possible, each with its own scheduling options.
+   ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> runs once for each job, before anything is stored. The batch
+   ///    is stored completely or not at all: when a hook throws, the token is cancelled before the storage write, or the
+   ///    storage write fails, no job from it is stored.
+   ///    Each job keeps its own <see cref="JobScheduleOptions.JobName"/> and <see cref="JobScheduleOptions.Group"/>. A job
+   ///    replaces a waiting job with the same name, but never a job that has already started: the new job is stored next
+   ///    to it. When two jobs in the list share a name, the last one in the list wins. Jobs that share a group run one at
+   ///    a time.
+   /// </summary>
+   /// <typeparam name="TJob">The type of job to execute.</typeparam>
+   /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
+   /// <param name="jobs">The parameters and the scheduling options, one pair for each job instance to schedule. Neither a parameters value nor an options value in the list may be <c>null</c>.</param>
+   /// <param name="ct">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
+   public Task PerformAsapAsync<TJob, TParameters>(IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> jobs, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class;
+
+   /// <summary>
+   ///    Schedule multiple jobs to be performed as soon as possible, each with its own scheduling options and running under the given culture.
+   ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> runs once for each job, before anything is stored. The batch
+   ///    is stored completely or not at all: when a hook throws, the token is cancelled before the storage write, or the
+   ///    storage write fails, no job from it is stored.
+   ///    Each job keeps its own <see cref="JobScheduleOptions.JobName"/> and <see cref="JobScheduleOptions.Group"/>. A job
+   ///    replaces a waiting job with the same name, but never a job that has already started: the new job is stored next
+   ///    to it. When two jobs in the list share a name, the last one in the list wins. Jobs that share a group run one at
+   ///    a time.
+   /// </summary>
+   /// <typeparam name="TJob">The type of job to execute.</typeparam>
+   /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
+   /// <param name="jobs">The parameters and the scheduling options, one pair for each job instance to schedule. Neither a parameters value nor an options value in the list may be <c>null</c>.</param>
+   /// <param name="culture">The culture to run the jobs under. Applied to both the formatting and UI culture.</param>
+   /// <param name="ct">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
+   public Task PerformAsapAsync<TJob, TParameters>(IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> jobs, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class;
+
+   /// <summary>
+   ///    Schedule multiple jobs to be performed at a given time, each with its own scheduling options.
+   ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> runs once for each job, before anything is stored. The batch
+   ///    is stored completely or not at all: when a hook throws, the token is cancelled before the storage write, or the
+   ///    storage write fails, no job from it is stored.
+   ///    Each job keeps its own <see cref="JobScheduleOptions.JobName"/> and <see cref="JobScheduleOptions.Group"/>. A job
+   ///    replaces a waiting job with the same name, but never a job that has already started: the new job is stored next
+   ///    to it. When two jobs in the list share a name, the last one in the list wins. Jobs that share a group run one at
+   ///    a time.
+   /// </summary>
+   /// <typeparam name="TJob">The type of job to execute.</typeparam>
+   /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
+   /// <param name="performAtUtc">The UTC time at which to perform the jobs.</param>
+   /// <param name="jobs">The parameters and the scheduling options, one pair for each job instance to schedule. Neither a parameters value nor an options value in the list may be <c>null</c>.</param>
+   /// <param name="ct">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
+   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> jobs, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class;
+
+   /// <summary>
+   ///    Schedule multiple jobs to be performed at a given time, each with its own scheduling options and running under the given culture.
+   ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> runs once for each job, before anything is stored. The batch
+   ///    is stored completely or not at all: when a hook throws, the token is cancelled before the storage write, or the
+   ///    storage write fails, no job from it is stored.
+   ///    Each job keeps its own <see cref="JobScheduleOptions.JobName"/> and <see cref="JobScheduleOptions.Group"/>. A job
+   ///    replaces a waiting job with the same name, but never a job that has already started: the new job is stored next
+   ///    to it. When two jobs in the list share a name, the last one in the list wins. Jobs that share a group run one at
+   ///    a time.
+   /// </summary>
+   /// <typeparam name="TJob">The type of job to execute.</typeparam>
+   /// <typeparam name="TParameters">The type of parameters for the job.</typeparam>
+   /// <param name="performAtUtc">The UTC time at which to perform the jobs.</param>
+   /// <param name="jobs">The parameters and the scheduling options, one pair for each job instance to schedule. Neither a parameters value nor an options value in the list may be <c>null</c>.</param>
+   /// <param name="culture">The culture to run the jobs under. Applied to both the formatting and UI culture.</param>
+   /// <param name="ct">A token to observe for cancellation requests.</param>
+   /// <returns>A task representing the asynchronous operation.</returns>
+   public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> jobs, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class;
+
+   /// <summary>
    ///    Schedule a job to be performed repeatedly on a given CRON schedule.
    /// </summary>
    /// <remarks>

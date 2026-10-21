@@ -77,7 +77,7 @@ internal sealed class JobScheduler : IJobScheduler
       var cultureName = CultureInfo.CurrentCulture.Name;
       var uiCultureName = CultureInfo.CurrentUICulture.Name;
 
-      await ScheduleBatchAsync<TJob, TParameters>(parameters, performAtUtc: null, cultureName, uiCultureName, ct);
+      await ScheduleBatchAsync<TJob, TParameters>(WithFreshOptions(parameters), nameof(parameters), performAtUtc: null, cultureName, uiCultureName, ct);
    }
 
    public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions? options = null, CancellationToken ct = default)
@@ -104,7 +104,7 @@ internal sealed class JobScheduler : IJobScheduler
 
       ArgumentNullException.ThrowIfNull(culture);
 
-      await ScheduleBatchAsync<TJob, TParameters>(parameters, performAtUtc: null, culture.Name, culture.Name, ct);
+      await ScheduleBatchAsync<TJob, TParameters>(WithFreshOptions(parameters), nameof(parameters), performAtUtc: null, culture.Name, culture.Name, ct);
    }
 
    public Task PerformAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions options, CultureInfo culture, CancellationToken ct = default)
@@ -114,6 +114,29 @@ internal sealed class JobScheduler : IJobScheduler
       ArgumentNullException.ThrowIfNull(options);
       ArgumentNullException.ThrowIfNull(culture);
       return ScheduleAsapAsync<TJob, TParameters>(parameters, options, culture.Name, culture.Name, ct);
+   }
+
+   public async Task PerformAsapAsync<TJob, TParameters>(IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> jobs, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      ArgumentNullException.ThrowIfNull(jobs);
+
+      // Capture the scheduling thread's culture once for the whole batch, before any await.
+      var cultureName = CultureInfo.CurrentCulture.Name;
+      var uiCultureName = CultureInfo.CurrentUICulture.Name;
+
+      await ScheduleBatchAsync<TJob, TParameters>(jobs, nameof(jobs), performAtUtc: null, cultureName, uiCultureName, ct);
+   }
+
+   public async Task PerformAsapAsync<TJob, TParameters>(IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> jobs, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      ArgumentNullException.ThrowIfNull(jobs);
+      ArgumentNullException.ThrowIfNull(culture);
+
+      await ScheduleBatchAsync<TJob, TParameters>(jobs, nameof(jobs), performAtUtc: null, culture.Name, culture.Name, ct);
    }
 
    private async Task ScheduleAsapAsync<TJob, TParameters>(TParameters parameters, JobScheduleOptions options, string cultureName, string uiCultureName, CancellationToken ct)
@@ -178,7 +201,7 @@ internal sealed class JobScheduler : IJobScheduler
       var cultureName = CultureInfo.CurrentCulture.Name;
       var uiCultureName = CultureInfo.CurrentUICulture.Name;
 
-      await ScheduleBatchAsync<TJob, TParameters>(parameters, performAtUtc, cultureName, uiCultureName, ct);
+      await ScheduleBatchAsync<TJob, TParameters>(WithFreshOptions(parameters), nameof(parameters), performAtUtc, cultureName, uiCultureName, ct);
    }
 
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions? options = null, CancellationToken ct = default)
@@ -205,7 +228,7 @@ internal sealed class JobScheduler : IJobScheduler
 
       ArgumentNullException.ThrowIfNull(culture);
 
-      await ScheduleBatchAsync<TJob, TParameters>(parameters, performAtUtc, culture.Name, culture.Name, ct);
+      await ScheduleBatchAsync<TJob, TParameters>(WithFreshOptions(parameters), nameof(parameters), performAtUtc, culture.Name, culture.Name, ct);
    }
 
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions options, CultureInfo culture, CancellationToken ct = default)
@@ -215,6 +238,29 @@ internal sealed class JobScheduler : IJobScheduler
       ArgumentNullException.ThrowIfNull(options);
       ArgumentNullException.ThrowIfNull(culture);
       return ScheduleAtAsync<TJob, TParameters>(performAtUtc, parameters, options, culture.Name, culture.Name, ct);
+   }
+
+   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> jobs, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      ArgumentNullException.ThrowIfNull(jobs);
+
+      // Capture the scheduling thread's culture once for the whole batch, before any await.
+      var cultureName = CultureInfo.CurrentCulture.Name;
+      var uiCultureName = CultureInfo.CurrentUICulture.Name;
+
+      await ScheduleBatchAsync<TJob, TParameters>(jobs, nameof(jobs), performAtUtc, cultureName, uiCultureName, ct);
+   }
+
+   public async Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> jobs, CultureInfo culture, CancellationToken ct = default)
+      where TJob : Job<TParameters>
+      where TParameters : class
+   {
+      ArgumentNullException.ThrowIfNull(jobs);
+      ArgumentNullException.ThrowIfNull(culture);
+
+      await ScheduleBatchAsync<TJob, TParameters>(jobs, nameof(jobs), performAtUtc, culture.Name, culture.Name, ct);
    }
 
    private async Task ScheduleAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, JobScheduleOptions options, string cultureName, string uiCultureName, CancellationToken ct)
@@ -257,29 +303,43 @@ internal sealed class JobScheduler : IJobScheduler
    }
 
    /// <summary>
-   ///    Stores a batch of jobs in one storage write, completely or not at all. Each job runs its
-   ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> hook in its own scope and gets its own job name.
+   ///    Pairs every parameters value with a new <see cref="JobScheduleOptions"/>, so each job of a batch without options
+   ///    gets its own random job name and no group.
    /// </summary>
-   /// <param name="parameters">The parameters, one for each job to schedule.</param>
+   private static IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> WithFreshOptions<TParameters>(IEnumerable<TParameters> parameters)
+      where TParameters : class
+   {
+      return parameters.Select(x => (Parameters: x, Options: new JobScheduleOptions()));
+   }
+
+   /// <summary>
+   ///    Stores a batch of jobs in one storage write, completely or not at all. Each job runs its
+   ///    <see cref="Job{TProperties}.OnJobScheduledAsync"/> hook in its own scope and is stored with its own options.
+   /// </summary>
+   /// <param name="jobs">The parameters and the options, one pair for each job to schedule.</param>
+   /// <param name="argumentName">The name of the caller's argument that holds the jobs, for the exception of a missing value.</param>
    /// <param name="performAtUtc">The UTC time to run the jobs at, or <c>null</c> to run them as soon as possible.</param>
    /// <param name="cultureName">The formatting culture name of the batch's Captured Culture.</param>
    /// <param name="uiCultureName">The UI culture name of the batch's Captured Culture.</param>
    /// <param name="ct">A token to observe for cancellation requests.</param>
-   private async Task ScheduleBatchAsync<TJob, TParameters>(IEnumerable<TParameters> parameters, DateTime? performAtUtc, string cultureName, string uiCultureName, CancellationToken ct)
+   private async Task ScheduleBatchAsync<TJob, TParameters>(IEnumerable<(TParameters Parameters, JobScheduleOptions Options)> jobs, string argumentName, DateTime? performAtUtc, string cultureName, string uiCultureName, CancellationToken ct)
       where TJob : Job<TParameters>
       where TParameters : class
    {
-      var parameterList = parameters.ToList();
-      if (parameterList.Any(x => x is null))
-         throw new ArgumentNullException(nameof(parameters));
+      var jobList = jobs.ToList();
+      if (jobList.Any(x => x.Parameters is null))
+         throw new ArgumentNullException(argumentName, "A job in the list has no parameters.");
 
-      if (parameterList.Count == 0)
+      if (jobList.Any(x => x.Options is null))
+         throw new ArgumentNullException(argumentName, "A job in the list has no options.");
+
+      if (jobList.Count == 0)
          return;
 
       try
       {
-         var items = new List<JobStoreItem>(parameterList.Count);
-         foreach (var parameter in parameterList)
+         var items = new List<JobStoreItem>(jobList.Count);
+         foreach (var (parameter, options) in jobList)
          {
             ct.ThrowIfCancellationRequested();
 
@@ -294,7 +354,7 @@ internal sealed class JobScheduler : IJobScheduler
                   JobType = typeof(TJob),
                   PerformAt = performAtUtc ?? _clock.UtcNow,
                   Parameters = parameter,
-                  Options = new JobScheduleOptions(),
+                  Options = options,
                   CultureName = cultureName,
                   UICultureName = uiCultureName
                }
@@ -307,11 +367,11 @@ internal sealed class JobScheduler : IJobScheduler
       // A cancellation the caller asked for is not a failure, so it propagates without an error log.
       catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
       {
-         Log.Error(e, "Error while scheduling a batch of {Count} jobs: {JobType}", parameterList.Count, typeof(TJob).Name);
+         Log.Error(e, "Error while scheduling a batch of {Count} jobs: {JobType}", jobList.Count, typeof(TJob).Name);
          throw;
       }
 
-      foreach (var parameter in parameterList)
+      foreach (var (parameter, _) in jobList)
       {
          if (performAtUtc is null)
             LogScheduledAsap<TJob>(parameter);
