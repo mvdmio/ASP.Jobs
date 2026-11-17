@@ -10,6 +10,8 @@ A library for scheduling jobs in ASP.NET Core applications.
 dotnet add package mvdmio.ASP.Jobs
 ```
 
+Supported frameworks: `net10.0` and `net11.0`. Building from source needs the .NET 11 SDK. Use 5.2.0 for .NET 8 or 9.
+
 2. Register the job scheduler and job runner in your `Startup.cs`:
 
 ```csharp

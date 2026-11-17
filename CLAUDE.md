@@ -4,7 +4,7 @@ Job scheduling library for ASP.NET Core — schedule and run background jobs wit
 
 ## Essentials
 
-- **Build tool:** .NET SDK (`dotnet`). Multi-targets `net8.0;net9.0;net10.0` with `LangVersion=latest`.
+- **Build tool:** .NET SDK (`dotnet`). Multi-targets `net10.0;net11.0` with `LangVersion=latest`.
 - **Build:** `dotnet build`
 - **Test:** `dotnet test` — PostgreSQL integration tests need **Docker running** (Testcontainers).
 - Before finishing any change, confirm it builds (`dotnet build`) then tests pass (`dotnet test`).

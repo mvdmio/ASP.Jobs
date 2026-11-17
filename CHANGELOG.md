@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-18: Targets .NET 10 and .NET 11 (6.0.0)
+The package now targets `net10.0` and `net11.0`. Support for `net8.0` and `net9.0` is removed, so this is a breaking change and the version is 6.0.0; applications on .NET 8 or 9 stay on 5.2.0. Building the library needs the .NET 11 SDK. `mvdmio.Database.PgSQL` moves from 0.41.0 to 0.43.0. The public API, the storage backends and the database schema are unchanged.
+
 ## 2026-10-21: Batch scheduling takes each job's own options
 `PerformAsapAsync` and `PerformAtAsync` now have batch overloads that take a list of `(Parameters, Options)` pairs, with and without a `CultureInfo`, so that every job in the list keeps its own `JobScheduleOptions` (job name and group). The list is still stored in one write with one `jobs_updated` notification, completely or not at all, where scheduling the same named jobs one by one costs one write and one notification each. A job replaces a waiting job with the same name but never one that has already started, the last job wins when two jobs in one list share a name, and jobs that share a group run one at a time. A list that holds a `null` options value throws `ArgumentNullException` and stores nothing. This is a new feature in 5.2.0; the existing overloads, the storage backends and the database schema are unchanged.
 
