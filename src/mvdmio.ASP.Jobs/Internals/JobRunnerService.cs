@@ -222,6 +222,15 @@ internal sealed class JobRunnerService : BackgroundService
       {
          await PerformJob(job, ct);
       }
+      catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+      {
+         // Expected during shutdown
+      }
+      catch (Exception ex)
+      {
+         // Nothing awaits this task, so without this catch the exception would go unobserved and unlogged.
+         _logger.LogError(ex, "Unhandled exception while running job {JobType}", job.JobType.Name);
+      }
       finally
       {
          semaphore.Release();
@@ -384,7 +393,7 @@ internal sealed class JobRunnerService : BackgroundService
 
       try
       {
-         var scheduled = await _jobStorage.TryScheduleRetryAsync(jobBusItem, nextAttemptAtUtc, cancellationToken);
+         var scheduled = await RetryStorageWriteAsync(() => _jobStorage.TryScheduleRetryAsync(jobBusItem, nextAttemptAtUtc, cancellationToken), jobBusItem, cancellationToken);
 
          if (scheduled)
          {
@@ -441,19 +450,65 @@ internal sealed class JobRunnerService : BackgroundService
    ///    Ends an Execution Chain: removes the job from storage and, for CRON jobs, schedules the next occurrence.
    ///    Only called when the chain actually ends (success, non-retryable/depleted failure, or cancellation) - never
    ///    for a retry, since the chain continues under the same identity.
+   ///    The step is retried until it succeeds or the application stops, so a storage outage does not leave the job Claimed.
    /// </summary>
    private async Task FinalizeChainAsync(JobStoreItem jobBusItem, CancellationToken cancellationToken)
    {
       try
       {
-         await _jobStorage.FinalizeJobAsync(jobBusItem, cancellationToken);
+         await RetryStorageWriteAsync(
+            async () => {
+               await _jobStorage.FinalizeJobAsync(jobBusItem, cancellationToken);
 
-         if (jobBusItem.CronExpression is not null)
-            await ScheduleNextOccurrence(jobBusItem, cancellationToken);
+               if (jobBusItem.CronExpression is not null)
+                  await ScheduleNextOccurrence(jobBusItem, cancellationToken);
+
+               return true;
+            },
+            jobBusItem,
+            cancellationToken
+         );
       }
       catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
       {
          // Ignore cancellation exceptions; they are expected when the service is stopped.
+      }
+   }
+
+   /// <summary>
+   ///    Runs a storage write that follows a job's body again and again until it succeeds. Waits 1 second after the first
+   ///    failure, doubling up to 30 seconds (<see cref="GetStorageErrorBackoff"/>). Every exception except cancellation is
+   ///    retried; the wait observes <paramref name="ct"/>, so shutdown ends the loop with an <see cref="OperationCanceledException"/>.
+   /// </summary>
+   /// <returns>The result of the attempt that succeeded.</returns>
+   private async Task<T> RetryStorageWriteAsync<T>(Func<Task<T>> write, JobStoreItem job, CancellationToken ct)
+   {
+      for (var attempt = 1;; attempt++)
+      {
+         try
+         {
+            var result = await write();
+
+            if (attempt > 1)
+               _logger.LogInformation("Stored the outcome of job {JobType} after {Attempts} attempts", job.JobType.Name, attempt);
+
+            return result;
+         }
+         catch (Exception ex) when (ex is not (TaskCanceledException or OperationCanceledException))
+         {
+            var wait = GetStorageErrorBackoff(attempt);
+
+            _logger.LogError(
+               ex,
+               "Error while storing the outcome of job {JobType} with parameters: {@Parameters} (attempt {Attempt}); trying again in {Wait}",
+               job.JobType.Name,
+               LoggedParameters.ToDictionary(job.Parameters),
+               attempt,
+               wait
+            );
+
+            await Task.Delay(wait, ct);
+         }
       }
    }
 

@@ -114,7 +114,8 @@ connections from the app's own. The pool is capped by the connection string's `M
 
 After a storage error, for example while PostgreSQL restarts or refuses new connections, the job runner waits 1 second
 before it tries again. Each further consecutive error doubles the wait, up to 30 seconds. A successful fetch resets the
-wait, and shutting the app down cuts it short.
+wait, and shutting the app down cuts it short. A job's end and its retry are retried with the same wait when the database
+refuses the write.
 
 ## Scheduled jobs (CRON)
 
