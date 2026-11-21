@@ -38,7 +38,7 @@ public sealed class PostgresParameterModificationTests : IAsyncLifetime
       services.RegisterJob<SecretParametersJob>();
       _services = services.BuildServiceProvider();
 
-      _scheduler = new JobScheduler(_services, Storage, Clock);
+      _scheduler = new JobScheduler(_services, Storage, Clock, new RecordingLogger<JobScheduler>());
    }
 
    public async ValueTask InitializeAsync()

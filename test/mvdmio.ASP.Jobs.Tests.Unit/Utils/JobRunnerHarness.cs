@@ -17,21 +17,24 @@ internal sealed class JobRunnerHarness
    public TestClock Clock { get; }
    public InMemoryJobStorage Storage { get; }
    public JobScheduler Scheduler { get; }
+   public RecordingLogger<JobScheduler> SchedulerLogger { get; }
    public JobRunnerService Runner { get; }
    public TestJobRetryPolicyProvider RetryPolicyProvider { get; }
 
-   public JobRunnerHarness(int maxConcurrentJobs = 10, int jobChannelCapacity = 50, ILogger<JobRunnerService>? runnerLogger = null)
+   public JobRunnerHarness(int maxConcurrentJobs = 10, int jobChannelCapacity = 50, ILogger<JobRunnerService>? runnerLogger = null, LogLevel schedulerMinimumLevel = LogLevel.Trace)
    {
       Clock = new TestClock();
       Storage = new InMemoryJobStorage(Clock);
+      SchedulerLogger = new RecordingLogger<JobScheduler>(schedulerMinimumLevel);
 
       var services = new JobTestServices().Services;
       services.RegisterJob<CultureChildSchedulingJob>();
       services.RegisterJob<LoggedParametersJob>();
       services.RegisterJob<UnmarkedParametersJob>();
+      services.RegisterJob<ReadCountingJob>();
       services.AddSingleton<IJobStorage>(Storage);
       // Register IJobScheduler so jobs that schedule further jobs (e.g. CultureChildSchedulingJob) can resolve it.
-      services.AddSingleton<IJobScheduler>(sp => new JobScheduler(sp, Storage, Clock));
+      services.AddSingleton<IJobScheduler>(sp => new JobScheduler(sp, Storage, Clock, SchedulerLogger));
       var serviceProvider = services.BuildServiceProvider();
 
       RetryPolicyProvider = serviceProvider.GetRequiredService<TestJobRetryPolicyProvider>();

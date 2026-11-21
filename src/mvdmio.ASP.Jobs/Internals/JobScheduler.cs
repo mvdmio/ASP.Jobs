@@ -6,11 +6,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Cronos;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using mvdmio.ASP.Jobs.Internals.Storage;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Utils;
-using Serilog;
 
 namespace mvdmio.ASP.Jobs.Internals;
 
@@ -22,6 +22,7 @@ internal sealed class JobScheduler : IJobScheduler
    private readonly IServiceProvider _services;
    private readonly IJobStorage _jobStorage;
    private readonly IClock _clock;
+   private readonly ILogger<JobScheduler> _logger;
    
    /// <summary>
    ///    Initializes a new instance of the <see cref="JobScheduler"/> class.
@@ -29,11 +30,13 @@ internal sealed class JobScheduler : IJobScheduler
    /// <param name="services">The service provider for resolving job instances.</param>
    /// <param name="jobStorage">The job storage implementation.</param>
    /// <param name="clock">The clock for time operations.</param>
-   public JobScheduler(IServiceProvider services, IJobStorage jobStorage, IClock clock)
+   /// <param name="logger">The logger for the scheduler's log lines.</param>
+   public JobScheduler(IServiceProvider services, IJobStorage jobStorage, IClock clock, ILogger<JobScheduler> logger)
    {
       _services = services;
       _jobStorage = jobStorage;
       _clock = clock;
+      _logger = logger;
    }
 
    public async Task PerformNowAsync<TJob, TParameters>(TParameters parameters, CancellationToken ct = default) 
@@ -173,14 +176,17 @@ internal sealed class JobScheduler : IJobScheduler
       }
    }
 
-   private static void LogSchedulingFailed<TJob>(Exception e, object parameters)
+   private void LogSchedulingFailed<TJob>(Exception e, object parameters)
    {
-      Log.Error(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters));
+      _logger.LogError(e, "Error while scheduling job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters, _logger));
    }
 
-   private static void LogScheduledAsap<TJob>(object parameters)
+   private void LogScheduledAsap<TJob>(object parameters)
    {
-      Log.Information("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters));
+      if (!_logger.IsEnabled(LogLevel.Debug))
+         return;
+
+      _logger.LogDebug("Scheduled job: {JobType} with parameters: {@Parameters}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters, _logger));
    }
 
    public Task PerformAtAsync<TJob, TParameters>(DateTime performAtUtc, TParameters parameters, CancellationToken ct = default)
@@ -297,9 +303,12 @@ internal sealed class JobScheduler : IJobScheduler
       }
    }
 
-   private static void LogScheduledAt<TJob>(object parameters, DateTime performAtUtc)
+   private void LogScheduledAt<TJob>(object parameters, DateTime performAtUtc)
    {
-      Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters), performAtUtc);
+      if (!_logger.IsEnabled(LogLevel.Debug))
+         return;
+
+      _logger.LogDebug("Scheduled job: {JobType} with parameters: {@Parameters} to run at {Time}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters, _logger), performAtUtc);
    }
 
    /// <summary>
@@ -367,7 +376,7 @@ internal sealed class JobScheduler : IJobScheduler
       // A cancellation the caller asked for is not a failure, so it propagates without an error log.
       catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
       {
-         Log.Error(e, "Error while scheduling a batch of {Count} jobs: {JobType}", jobList.Count, typeof(TJob).Name);
+         _logger.LogError(e, "Error while scheduling a batch of {Count} jobs: {JobType}", jobList.Count, typeof(TJob).Name);
          throw;
       }
 
@@ -465,7 +474,8 @@ internal sealed class JobScheduler : IJobScheduler
             await _jobStorage.ScheduleCronJobAsync(jobItem, ct);
          }
 
-         Log.Information("Scheduled Job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters), cronExpression.ToString());
+         if (_logger.IsEnabled(LogLevel.Information))
+            _logger.LogInformation("Scheduled job: {JobType} with parameters: {@Parameters} to run on schedule {CronExpression}", typeof(TJob).Name, LoggedParameters.ToDictionary(parameters, _logger), cronExpression.ToString());
       }
       catch (Exception e)
       {

@@ -2,7 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
-using Serilog;
+using Microsoft.Extensions.Logging;
 
 namespace mvdmio.ASP.Jobs.Internals;
 
@@ -20,21 +20,19 @@ internal static class LoggedParameters
    ///    collections of only scalars keep their value. The result is empty when nothing is marked.
    /// </summary>
    /// <param name="parameters">The Job Parameters.</param>
-   public static Dictionary<string, object?> ToDictionary(object? parameters)
+   /// <param name="logger">The logger for the Debug lines about a property that was left out.</param>
+   public static Dictionary<string, object?> ToDictionary(object? parameters, ILogger logger)
    {
-      return Collect(parameters, new HashSet<object>(ReferenceEqualityComparer.Instance));
+      return Collect(parameters, new HashSet<object>(ReferenceEqualityComparer.Instance), logger);
    }
 
-   /// <summary>
-   ///    Gets the Logged Parameters of <paramref name="parameters"/> as one flat dictionary, keyed by the dot-separated
-   ///    property path (for example <c>Order.Id</c>, <c>Items[0].Id</c> or <c>Names[key]</c>). Used for trace tags.
-   /// </summary>
-   /// <param name="parameters">The Job Parameters.</param>
-   public static Dictionary<string, object?> ToFlatDictionary(object? parameters)
+   // Flattens the Logged Parameters that ToDictionary built into one dictionary, keyed by the dot-separated
+   // property path (for example Order.Id, Items[0].Id or Names[key]). Used for trace tags.
+   public static Dictionary<string, object?> ToFlatDictionary(Dictionary<string, object?> loggedParameters)
    {
       var flat = new Dictionary<string, object?>();
 
-      foreach (var (name, value) in ToDictionary(parameters))
+      foreach (var (name, value) in loggedParameters)
          Flatten(name, value, flat);
 
       return flat;
@@ -64,7 +62,7 @@ internal static class LoggedParameters
       }
    }
 
-   private static Dictionary<string, object?> Collect(object? instance, HashSet<object> path)
+   private static Dictionary<string, object?> Collect(object? instance, HashSet<object> path, ILogger logger)
    {
       var result = new Dictionary<string, object?>();
 
@@ -80,11 +78,11 @@ internal static class LoggedParameters
             continue;
 
          // Logging must never fail a run: a getter that throws leaves its property out.
-         if (!TryGetValue(property, instance, out var value))
+         if (!TryGetValue(property, instance, logger, out var value))
             continue;
 
          // A reference back to an object on the current path would recurse forever; leave that property out.
-         if (TryProject(value, path, out var projected))
+         if (TryProject(value, path, logger, out var projected))
             result[property.Name] = projected;
       }
 
@@ -92,7 +90,7 @@ internal static class LoggedParameters
       return result;
    }
 
-   private static bool TryGetValue(PropertyInfo property, object instance, out object? value)
+   private static bool TryGetValue(PropertyInfo property, object instance, ILogger logger, out object? value)
    {
       try
       {
@@ -101,7 +99,7 @@ internal static class LoggedParameters
       }
       catch (Exception e)
       {
-         Log.Debug(e, "Left property {Property} of {Type} out of the Logged Parameters: its getter threw", property.Name, instance.GetType().Name);
+         logger.LogDebug(e, "Left property {Property} of {Type} out of the Logged Parameters: its getter threw", property.Name, instance.GetType().Name);
          value = null;
          return false;
       }
@@ -110,7 +108,7 @@ internal static class LoggedParameters
    // Keeps scalars, and collections of only scalars, as they are. Everything else becomes a structure of its own Logged
    // Parameters: objects and structs a dictionary of their marked properties, dictionaries a dictionary by key, other
    // collections a list. Returns false when the value refers back to an object on the current path.
-   private static bool TryProject(object? value, HashSet<object> visiting, out object? projected)
+   private static bool TryProject(object? value, HashSet<object> visiting, ILogger logger, out object? projected)
    {
       if (value is null || IsScalar(value.GetType()))
       {
@@ -120,7 +118,7 @@ internal static class LoggedParameters
 
       if (value.GetType().IsValueType)
       {
-         projected = Collect(value, visiting);
+         projected = Collect(value, visiting, logger);
          return true;
       }
 
@@ -132,14 +130,14 @@ internal static class LoggedParameters
       if (value is IDictionary dictionary)
       {
          visiting.Add(value);
-         projected = ProjectDictionary(dictionary, visiting);
+         projected = ProjectDictionary(dictionary, visiting, logger);
          visiting.Remove(value);
          return true;
       }
 
       if (value is IEnumerable enumerable)
       {
-         if (!TryMaterialize(enumerable, out var items))
+         if (!TryMaterialize(enumerable, logger, out var items))
             return false;
 
          if (items.TrueForAll(x => x is null || IsScalar(x.GetType())))
@@ -149,35 +147,35 @@ internal static class LoggedParameters
          }
 
          visiting.Add(value);
-         projected = ProjectItems(items, visiting);
+         projected = ProjectItems(items, visiting, logger);
          visiting.Remove(value);
          return true;
       }
 
-      projected = Collect(value, visiting);
+      projected = Collect(value, visiting, logger);
       return true;
    }
 
-   private static KeyedValues ProjectDictionary(IDictionary dictionary, HashSet<object> visiting)
+   private static KeyedValues ProjectDictionary(IDictionary dictionary, HashSet<object> visiting, ILogger logger)
    {
       var result = new KeyedValues();
 
       foreach (DictionaryEntry entry in dictionary)
       {
-         if (TryProject(entry.Value, visiting, out var projected))
+         if (TryProject(entry.Value, visiting, logger, out var projected))
             result[entry.Key.ToString() ?? string.Empty] = projected;
       }
 
       return result;
    }
 
-   private static ElementList ProjectItems(List<object?> items, HashSet<object> visiting)
+   private static ElementList ProjectItems(List<object?> items, HashSet<object> visiting, ILogger logger)
    {
       var result = new ElementList();
 
       foreach (var item in items)
       {
-         if (TryProject(item, visiting, out var projected))
+         if (TryProject(item, visiting, logger, out var projected))
             result.Add(projected);
       }
 
@@ -185,7 +183,7 @@ internal static class LoggedParameters
    }
 
    // Logging must never fail a run: a collection that throws while it is enumerated leaves its property out.
-   private static bool TryMaterialize(IEnumerable enumerable, out List<object?> items)
+   private static bool TryMaterialize(IEnumerable enumerable, ILogger logger, out List<object?> items)
    {
       items = [];
 
@@ -198,7 +196,7 @@ internal static class LoggedParameters
       }
       catch (Exception e)
       {
-         Log.Debug(e, "Left a {Type} out of the Logged Parameters: enumerating it threw", enumerable.GetType().Name);
+         logger.LogDebug(e, "Left a {Type} out of the Logged Parameters: enumerating it threw", enumerable.GetType().Name);
          return false;
       }
    }

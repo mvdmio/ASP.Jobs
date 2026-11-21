@@ -1,4 +1,7 @@
+using System.Collections;
+using System.Reflection;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
 using Xunit;
@@ -10,6 +13,8 @@ namespace mvdmio.ASP.Jobs.Tests.Unit;
 /// </summary>
 public sealed class LoggedParametersTests
 {
+   private readonly RecordingLogger<LoggedParametersTests> _logger = new();
+
    [Fact]
    public void ToDictionary_KeepsNullAndCollectionValuesAsTheyAre()
    {
@@ -18,7 +23,7 @@ public sealed class LoggedParametersTests
       var parameters = new ShapeParameters { Missing = null, Ids = ids, Kind = DayOfWeek.Friday, Text = "text", Hidden = "hidden" };
 
       // Act
-      var logged = LoggedParameters.ToDictionary(parameters);
+      var logged = LoggedParameters.ToDictionary(parameters, _logger);
 
       // Assert
       logged.Should().BeEquivalentTo(new Dictionary<string, object?> { ["Missing"] = null, ["Ids"] = ids, ["Kind"] = DayOfWeek.Friday, ["Text"] = "text" });
@@ -37,8 +42,8 @@ public sealed class LoggedParametersTests
       };
 
       // Act
-      var logged = LoggedParameters.ToDictionary(parameters);
-      var flat = LoggedParameters.ToFlatDictionary(parameters);
+      var logged = LoggedParameters.ToDictionary(parameters, _logger);
+      var flat = LoggedParameters.ToFlatDictionary(LoggedParameters.ToDictionary(parameters, _logger));
 
       // Assert
       logged.Should().BeEquivalentTo(new Dictionary<string, object?>
@@ -64,8 +69,8 @@ public sealed class LoggedParametersTests
       node.Next = node;
 
       // Act
-      var logged = LoggedParameters.ToDictionary(node);
-      var flat = LoggedParameters.ToFlatDictionary(node);
+      var logged = LoggedParameters.ToDictionary(node, _logger);
+      var flat = LoggedParameters.ToFlatDictionary(LoggedParameters.ToDictionary(node, _logger));
 
       // Assert
       logged.Should().BeEquivalentTo(new Dictionary<string, object?> { ["Id"] = 7 });
@@ -79,12 +84,46 @@ public sealed class LoggedParametersTests
       var parameters = new ThrowingGetterParameters { Id = 3 };
 
       // Act
-      var logged = LoggedParameters.ToDictionary(parameters);
-      var flat = LoggedParameters.ToFlatDictionary(parameters);
+      var logged = LoggedParameters.ToDictionary(parameters, _logger);
+      var flat = LoggedParameters.ToFlatDictionary(LoggedParameters.ToDictionary(parameters, _logger));
 
       // Assert
       logged.Should().BeEquivalentTo(new Dictionary<string, object?> { ["Id"] = 3 });
       flat.Should().BeEquivalentTo(new Dictionary<string, object?> { ["Id"] = 3 });
+   }
+
+   [Fact]
+   public void ToDictionary_WhenAGetterThrows_LogsADebugLineToTheLoggerItGot()
+   {
+      // Arrange
+      var parameters = new ThrowingGetterParameters { Id = 3 };
+
+      // Act
+      var logged = LoggedParameters.ToDictionary(parameters, _logger);
+
+      // Assert
+      logged.Should().NotContainKey("Broken");
+      var line = _logger.Entries.Should().ContainSingle().Subject;
+      line.Level.Should().Be(LogLevel.Debug);
+      line.Message.Should().Be("Left property Broken of ThrowingGetterParameters out of the Logged Parameters: its getter threw");
+      line.Exception.Should().BeOfType<TargetInvocationException>().Which.InnerException.Should().BeOfType<InvalidOperationException>().Which.Message.Should().Be("getter failed");
+   }
+
+   [Fact]
+   public void ToDictionary_WhenAnEnumerationThrows_LogsADebugLineToTheLoggerItGot()
+   {
+      // Arrange
+      var parameters = new ThrowingEnumerationParameters { Id = 5 };
+
+      // Act
+      var logged = LoggedParameters.ToDictionary(parameters, _logger);
+
+      // Assert
+      logged.Should().BeEquivalentTo(new Dictionary<string, object?> { ["Id"] = 5 });
+      var line = _logger.Entries.Should().ContainSingle().Subject;
+      line.Level.Should().Be(LogLevel.Debug);
+      line.Message.Should().Be("Left a ThrowingCollection out of the Logged Parameters: enumerating it threw");
+      line.Exception.Should().BeOfType<InvalidOperationException>().Which.Message.Should().Be("enumeration failed");
    }
 
    [Fact]
@@ -94,7 +133,7 @@ public sealed class LoggedParametersTests
       var parameters = new LoggedParametersJob.Parameters();
 
       // Act
-      var flat = LoggedParameters.ToFlatDictionary(parameters);
+      var flat = LoggedParameters.ToFlatDictionary(LoggedParameters.ToDictionary(parameters, _logger));
 
       // Assert
       flat.Should().BeEquivalentTo(new Dictionary<string, object?> { ["Id"] = parameters.Id, ["Order.Id"] = parameters.Order.Id });
@@ -152,6 +191,22 @@ public sealed class LoggedParametersTests
 
       [LoggedParameter]
       public string Broken => throw new InvalidOperationException("getter failed");
+   }
+
+   private sealed class ThrowingEnumerationParameters
+   {
+      [LoggedParameter]
+      public int Id { get; set; }
+
+      [LoggedParameter]
+      public ThrowingCollection Items { get; } = new();
+   }
+
+   private sealed class ThrowingCollection : IEnumerable<int>
+   {
+      public IEnumerator<int> GetEnumerator() => throw new InvalidOperationException("enumeration failed");
+
+      IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
    }
 
    private sealed class CycleParameters

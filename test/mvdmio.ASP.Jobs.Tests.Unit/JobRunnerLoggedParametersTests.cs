@@ -37,6 +37,7 @@ public sealed class JobRunnerLoggedParametersTests
       // Assert
       var lines = JobLines(parameters.Id);
       lines.Should().HaveCount(2);
+      lines.Should().OnlyContain(x => x.Level == LogLevel.Debug);
       lines.Select(x => x.Message).Should().Contain(x => x.StartsWith("Running job: LoggedParametersJob"));
       lines.Select(x => x.Message).Should().Contain(x => x.StartsWith("Finished job LoggedParametersJob"));
       lines.Should().OnlyContain(x => x.Message.Contains(parameters.Id.ToString()));

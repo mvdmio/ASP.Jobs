@@ -4,27 +4,19 @@ using mvdmio.ASP.Jobs.Internals;
 using mvdmio.ASP.Jobs.Internals.Storage.Data;
 using mvdmio.ASP.Jobs.Internals.Storage.Interfaces;
 using mvdmio.ASP.Jobs.Tests.Unit.Utils;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
-using Serilog.Events;
 using Xunit;
 
 namespace mvdmio.ASP.Jobs.Tests.Unit;
 
 /// <summary>
 /// Tests that the job scheduler's log lines show a job's Logged Parameters and never the rest of its Job Parameters.
-/// The scheduler logs through Serilog's static logger, so these tests share one collection and match events by their own marked id.
 /// </summary>
-[Collection(SerilogCapture.Name)]
-public sealed class JobSchedulerLoggedParametersTests : IDisposable
+public sealed class JobSchedulerLoggedParametersTests
 {
-   private readonly SerilogCapture _capture = new();
    private readonly JobRunnerHarness _harness = new();
    private readonly CancellationToken _ct = TestContext.Current.CancellationToken;
-
-   public void Dispose()
-   {
-      _capture.Dispose();
-   }
 
    [Fact]
    public async Task Asap_LogsJobTypeAndMarkedIds_AndNeverTheSecret()
@@ -36,9 +28,9 @@ public sealed class JobSchedulerLoggedParametersTests : IDisposable
       await _harness.Scheduler.PerformAsapAsync<LoggedParametersJob, LoggedParametersJob.Parameters>(parameters, _ct);
 
       // Assert
-      var line = LinesFor(parameters).Should().ContainSingle().Subject;
-      line.Level.Should().Be(LogEventLevel.Information);
-      Message(line).Should().StartWith("Scheduled job: LoggedParametersJob");
+      var line = _harness.SchedulerLogger.Entries.Should().ContainSingle().Subject;
+      line.Level.Should().Be(LogLevel.Debug);
+      line.Message.Should().StartWith("Scheduled job: LoggedParametersJob");
       AssertShowsMarkedIdsOnly(line, parameters);
    }
 
@@ -53,8 +45,9 @@ public sealed class JobSchedulerLoggedParametersTests : IDisposable
       await _harness.Scheduler.PerformAtAsync<LoggedParametersJob, LoggedParametersJob.Parameters>(performAtUtc, parameters, _ct);
 
       // Assert
-      var line = LinesFor(parameters).Should().ContainSingle().Subject;
-      Message(line).Should().StartWith("Scheduled Job: LoggedParametersJob").And.Contain("to run at");
+      var line = _harness.SchedulerLogger.Entries.Should().ContainSingle().Subject;
+      line.Level.Should().Be(LogLevel.Debug);
+      line.Message.Should().StartWith("Scheduled job: LoggedParametersJob").And.Contain("to run at");
       line.Properties.Should().ContainKey("Time");
       AssertShowsMarkedIdsOnly(line, parameters);
    }
@@ -71,17 +64,21 @@ public sealed class JobSchedulerLoggedParametersTests : IDisposable
       await _harness.Scheduler.PerformAtAsync<LoggedParametersJob, LoggedParametersJob.Parameters>(DateTime.UtcNow.AddHours(1), at, _ct);
 
       // Assert
+      var lines = _harness.SchedulerLogger.Entries.ToList();
+      lines.Should().HaveCount(4);
+      lines.Should().OnlyContain(x => x.Level == LogLevel.Debug);
+
       foreach (var parameters in asap)
       {
-         var line = LinesFor(parameters).Should().ContainSingle().Subject;
-         Message(line).Should().StartWith("Scheduled job: LoggedParametersJob");
+         var line = LinesFor(lines, parameters).Should().ContainSingle().Subject;
+         line.Message.Should().StartWith("Scheduled job: LoggedParametersJob");
          AssertShowsMarkedIdsOnly(line, parameters);
       }
 
       foreach (var parameters in at)
       {
-         var line = LinesFor(parameters).Should().ContainSingle().Subject;
-         Message(line).Should().StartWith("Scheduled Job: LoggedParametersJob").And.Contain("to run at");
+         var line = LinesFor(lines, parameters).Should().ContainSingle().Subject;
+         line.Message.Should().StartWith("Scheduled job: LoggedParametersJob").And.Contain("to run at");
          AssertShowsMarkedIdsOnly(line, parameters);
       }
    }
@@ -98,8 +95,9 @@ public sealed class JobSchedulerLoggedParametersTests : IDisposable
       await _harness.Scheduler.PerformCronAsync<LoggedParametersJob, LoggedParametersJob.Parameters>("0 0 * * *", parameters, runImmediately, _ct);
 
       // Assert
-      var line = LinesFor(parameters).Should().ContainSingle().Subject;
-      Message(line).Should().StartWith("Scheduled Job: LoggedParametersJob").And.Contain("to run on schedule");
+      var line = _harness.SchedulerLogger.Entries.Should().ContainSingle().Subject;
+      line.Level.Should().Be(LogLevel.Information);
+      line.Message.Should().StartWith("Scheduled job: LoggedParametersJob").And.Contain("to run on schedule");
       line.Properties.Should().ContainKey("CronExpression");
       AssertShowsMarkedIdsOnly(line, parameters);
    }
@@ -115,10 +113,10 @@ public sealed class JobSchedulerLoggedParametersTests : IDisposable
 
       // Assert
       await act.Should().ThrowAsync<InvalidOperationException>();
-      var line = LinesFor(parameters).Should().ContainSingle().Subject;
-      line.Level.Should().Be(LogEventLevel.Error);
+      var line = _harness.SchedulerLogger.Entries.Should().ContainSingle().Subject;
+      line.Level.Should().Be(LogLevel.Error);
       line.Exception.Should().BeSameAs(parameters.ThrowOnExecute);
-      Message(line).Should().StartWith("Error while scheduling job: LoggedParametersJob");
+      line.Message.Should().StartWith("Error while scheduling job: LoggedParametersJob");
       AssertShowsMarkedIdsOnly(line, parameters);
    }
 
@@ -133,10 +131,10 @@ public sealed class JobSchedulerLoggedParametersTests : IDisposable
 
       // Assert
       await act.Should().ThrowAsync<InvalidOperationException>();
-      var line = LinesFor(parameters).Should().ContainSingle().Subject;
-      line.Level.Should().Be(LogEventLevel.Error);
+      var line = _harness.SchedulerLogger.Entries.Should().ContainSingle().Subject;
+      line.Level.Should().Be(LogLevel.Error);
       line.Exception.Should().BeOfType<InvalidOperationException>();
-      Message(line).Should().StartWith("Error while scheduling job: LoggedParametersJob");
+      line.Message.Should().StartWith("Error while scheduling job: LoggedParametersJob");
       AssertShowsMarkedIdsOnly(line, parameters);
    }
 
@@ -183,11 +181,10 @@ public sealed class JobSchedulerLoggedParametersTests : IDisposable
       await invalidCron.Should().ThrowAsync<InvalidOperationException>();
 
       // Assert
-      // Other tests may log through the static logger at the same time, so assert on every unmarked-job line alike.
-      var lines = _capture.Events.Where(x => x.RenderMessage().Contains("UnmarkedParametersJob")).ToList();
-      lines.Should().HaveCountGreaterThanOrEqualTo(7);
-      lines.Should().OnlyContain(x => ((DictionaryValue)x.Properties["Parameters"]).Elements.Count == 0);
-      lines.Select(SerilogCapture.Text).Should().NotContain(x =>
+      var lines = _harness.SchedulerLogger.Entries.ToList();
+      lines.Should().HaveCount(7);
+      lines.Select(x => x.Properties["@Parameters"].Should().BeAssignableTo<IDictionary<string, object?>>().Subject).Should().OnlyContain(x => x.Count == 0);
+      lines.Select(Text).Should().NotContain(x =>
          x.Contains(parameters.Secret) || x.Contains(parameters.Id.ToString()) || x.Contains(failing.Secret) || x.Contains(failing.Id.ToString())
       );
    }
@@ -220,7 +217,8 @@ public sealed class JobSchedulerLoggedParametersTests : IDisposable
 
       var services = new ServiceCollection();
       services.RegisterJob<LoggedParametersJob>();
-      var scheduler = new JobScheduler(services.BuildServiceProvider(), storage, new TestClock());
+      var logger = new RecordingLogger<JobScheduler>();
+      var scheduler = new JobScheduler(services.BuildServiceProvider(), storage, new TestClock(), logger);
       var parameters = new LoggedParametersJob.Parameters();
 
       // Act
@@ -228,29 +226,37 @@ public sealed class JobSchedulerLoggedParametersTests : IDisposable
 
       // Assert
       await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("storage failure");
-      var line = LinesFor(parameters).Should().ContainSingle().Subject;
-      line.Level.Should().Be(LogEventLevel.Error);
+      var line = logger.Entries.Should().ContainSingle().Subject;
+      line.Level.Should().Be(LogLevel.Error);
       line.Exception.Should().BeSameAs(failure);
-      Message(line).Should().StartWith("Error while scheduling job: LoggedParametersJob");
+      line.Message.Should().StartWith("Error while scheduling job: LoggedParametersJob");
       AssertShowsMarkedIdsOnly(line, parameters);
    }
 
-   private List<LogEvent> LinesFor(LoggedParametersJob.Parameters parameters)
+   private static List<RecordedLogEntry> LinesFor(IEnumerable<RecordedLogEntry> lines, LoggedParametersJob.Parameters parameters)
    {
-      return _capture.Events.Where(x => SerilogCapture.Text(x).Contains(parameters.Id.ToString())).ToList();
+      return lines.Where(x => Text(x).Contains(parameters.Id.ToString())).ToList();
    }
 
-   /// <summary>The rendered message without Serilog's quotes around string values, so a prefix reads like the template.</summary>
-   private static string Message(LogEvent line)
+   private static string Text(RecordedLogEntry line)
    {
-      return line.RenderMessage().Replace("\"", string.Empty);
+      return line.Message + " " + string.Join(" ", line.Properties.Values.Select(Render));
    }
 
-   private static void AssertShowsMarkedIdsOnly(LogEvent line, LoggedParametersJob.Parameters parameters)
+   private static string Render(object? value)
    {
-      var text = SerilogCapture.Text(line);
+      return value switch {
+         null => string.Empty,
+         IDictionary<string, object?> dictionary => string.Join(" ", dictionary.Values.Select(Render)),
+         _ => value.ToString() ?? string.Empty
+      };
+   }
+
+   private static void AssertShowsMarkedIdsOnly(RecordedLogEntry line, LoggedParametersJob.Parameters parameters)
+   {
+      var text = Text(line);
       text.Should().Contain(parameters.Id.ToString()).And.Contain(parameters.Order.Id.ToString());
       text.Should().NotContain(parameters.Secret).And.NotContain(parameters.Order.Token);
-      line.Properties.Should().ContainKey("Parameters");
+      line.Properties.Should().ContainKey("@Parameters");
    }
 }

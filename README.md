@@ -87,6 +87,35 @@ public void MyController : Controller
 }
 ```
 
+## Logging
+
+Every line the library writes goes through your host's `ILogger`, under a category, so your `Logging` configuration applies to it. The lines that every run or schedule writes are at Debug, so they stay out of your logs at the default level:
+
+| Line | Level | Category |
+|------|-------|----------|
+| `Running job` | Debug | `mvdmio.ASP.Jobs.Internals.JobRunnerService` |
+| `Finished job` | Debug | `mvdmio.ASP.Jobs.Internals.JobRunnerService` |
+| `Scheduled job` (`PerformAsapAsync` and `PerformAtAsync`) | Debug | `mvdmio.ASP.Jobs.Internals.JobScheduler` |
+| `Scheduled job: … to run on schedule …` (`PerformCronAsync`) | Information | `mvdmio.ASP.Jobs.Internals.JobScheduler` |
+
+To get the Debug lines back, set one of the categories to Debug:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "mvdmio.ASP.Jobs.Internals.JobRunnerService": "Debug",
+      "mvdmio.ASP.Jobs.Internals.JobScheduler": "Debug"
+    }
+  }
+}
+```
+
+The lines that signal something unusual stay at Information: `Retrying job`, a superseded Execution Chain, `Stored the outcome … after N attempts`, and the start and shutdown of the runner. Warning and Error lines keep their level.
+
+If you log with Serilog, use its `Microsoft.Extensions.Logging` provider (`UseSerilog()` on the host) and every line reaches your sinks. The package does not reference Serilog itself.
+
 ## Initialization
 
 The library prepares its storage (for PostgreSQL, by running database migrations) through a single **Initialization**

@@ -38,7 +38,7 @@ public sealed class PostgresCultureTests : IAsyncLifetime
       services.RegisterJob<TestJob>();
       _services = services.BuildServiceProvider();
 
-      _scheduler = new JobScheduler(_services, Storage, _harness.Clock);
+      _scheduler = new JobScheduler(_services, Storage, _harness.Clock, new RecordingLogger<JobScheduler>());
    }
 
    public async ValueTask InitializeAsync()

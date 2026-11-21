@@ -13,6 +13,7 @@ namespace mvdmio.ASP.Jobs.Tests.Unit;
 /// A listener hears the whole process, so each test matches only the spans whose <c>job.parameters.Id</c> tag holds the
 /// Logged Parameter <see cref="TestJob.Parameters.Id"/> of its own <see cref="TestJob.Parameters"/> instance.
 /// </summary>
+[Collection(SpanListenerCollection.NAME)]
 public sealed class JobRunnerTracingTests
 {
    private static readonly string _testJobType = typeof(TestJob).AssemblyQualifiedName!;

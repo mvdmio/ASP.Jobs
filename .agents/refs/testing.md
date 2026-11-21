@@ -24,8 +24,9 @@ Test stack: **xUnit v3** + **NSubstitute** (mocking) + **AwesomeAssertions** (fl
 | `JobTestServices` | Helper for setting up test DI containers |
 | `LoggedParametersJob` | Job whose Job Parameters hold Logged Parameters (one nested) and unmarked secrets, and that throws on request; for asserting what log lines and spans show. Has its own throw switch because `TestJob` lacks the nested Logged Parameter and the secrets |
 | `UnmarkedParametersJob` | Job whose Job Parameters mark nothing as logged, and that throws on request; for asserting that no parameter values are shown |
-| `RecordingLogger<T>` | Logger that records every entry (level, message, exception and the named values of the message template), to assert which lines were logged, how often, and what they show |
-| `SerilogCapture` | Records events on Serilog's static `Log.Logger` (what `JobScheduler` logs through) and restores it on dispose; test classes using it join the `[Collection(SerilogCapture.Name)]` xunit collection and match events by their own unique id |
+| `ReadCountingJob` | Job whose one Logged Parameter counts its getter reads; for asserting whether a run built the Logged Parameters, and how often |
+| `SpanListenerCollection` | xunit collection name for tests that depend on whether the job activity source has a listener (listeners hear the whole process, so those tests run serially) |
+| `RecordingLogger<T>` | Logger that records every entry at or above an optional minimum level, default all (level, message, exception and the named values of the message template), to assert which lines were logged, how often, and what they show |
 
 Reuse these utilities rather than rolling your own.
 

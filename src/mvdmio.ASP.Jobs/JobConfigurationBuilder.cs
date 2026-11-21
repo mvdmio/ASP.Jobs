@@ -96,7 +96,11 @@ public class JobConfigurationBuilder
       }
       
       if (IsSchedulerEnabled)
+      {
+         // The scheduler needs an ILogger<JobScheduler>; AddLogging is idempotent, so a host that set up logging keeps its own.
+         services.AddLogging();
          services.AddSingleton<IJobScheduler, JobScheduler>();
+      }
 
       if (IsRunnerEnabled)
          services.AddHostedService<JobRunnerService>();

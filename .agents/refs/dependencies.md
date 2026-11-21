@@ -7,7 +7,6 @@
 | `Cronos` | CRON expression parsing |
 | `mvdmio.Database.PgSQL` | PostgreSQL database access |
 | `OpenTelemetry.Api` | Distributed tracing |
-| `Serilog` | Structured logging |
 | `Microsoft.Extensions.DependencyInjection` (+ `.Abstractions`) | DI integration |
 | `Microsoft.Extensions.Hosting.Abstractions` | `BackgroundService` support |
 | `Microsoft.Bcl.AsyncInterfaces` | Async interface polyfills |

@@ -244,14 +244,16 @@ internal sealed class JobRunnerService : BackgroundService
       await using var scope = _services.CreateAsyncScope();
       var job = (IJob)scope.ServiceProvider.GetRequiredService(jobBusItem.JobType);
 
+      // Only the Logged Parameters reach the log lines and the span tags; the Job Parameters themselves never do. They
+      // are built at the first place that needs them and reused after that, so a run that needs none does no reflection.
+      Dictionary<string, object?>? loggedParameters = null;
+      Dictionary<string, object?> GetLoggedParameters() => loggedParameters ??= LoggedParameters.ToDictionary(jobBusItem.Parameters, _logger);
+
       // OpenTelemetry tracing. The name and tags go in at start, so a sampler can decide by job type. Without a
       // listener there is no span, so the name and tags are not built either.
       using var activity = _openTelemetry.HasListeners()
-         ? _openTelemetry.StartActivity($"Job: {jobBusItem.JobType.Name}", ActivityKind.Internal, parentContext: default, tags: GetJobSpanTags(jobBusItem))
+         ? _openTelemetry.StartActivity($"Job: {jobBusItem.JobType.Name}", ActivityKind.Internal, parentContext: default, tags: GetJobSpanTags(jobBusItem, GetLoggedParameters()))
          : null;
-
-      // Only the Logged Parameters reach the log lines; the Job Parameters themselves never do.
-      var loggedParameters = LoggedParameters.ToDictionary(jobBusItem.Parameters);
 
       Exception? executionException = null;
       var wasCanceled = false;
@@ -271,7 +273,9 @@ internal sealed class JobRunnerService : BackgroundService
             // fire-and-forget task.
             ApplyCapturedCulture(jobBusItem);
 
-            _logger.LogInformation("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, loggedParameters);
+            if (_logger.IsEnabled(LogLevel.Debug))
+               _logger.LogDebug("Running job: {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, GetLoggedParameters());
+
             activity?.AddEvent(new ActivityEvent("Job Started"));
 
             await job.ExecuteAsync(jobBusItem.Parameters, cancellationToken);
@@ -279,9 +283,12 @@ internal sealed class JobRunnerService : BackgroundService
             activity?.AddEvent(new ActivityEvent("Job Completed"));
             activity?.SetStatus(ActivityStatusCode.Ok, "Job completed successfully");
 
-            var endTime = Stopwatch.GetTimestamp();
-            var duration = new TimeSpan(endTime - startTime);
-            _logger.LogInformation("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, loggedParameters, duration);
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+               var endTime = Stopwatch.GetTimestamp();
+               var duration = new TimeSpan(endTime - startTime);
+               _logger.LogDebug("Finished job {JobType} with parameters {@Parameters} in {Duration}", jobBusItem.JobType.Name, GetLoggedParameters(), duration);
+            }
          }
          catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
          {
@@ -293,7 +300,7 @@ internal sealed class JobRunnerService : BackgroundService
          {
             executionException = e;
 
-            _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, loggedParameters);
+            _logger.LogError(e, "Error while running job {JobType} with parameters: {@Parameters}", jobBusItem.JobType.Name, GetLoggedParameters());
 
             activity?.AddException(e);
             activity?.SetStatus(ActivityStatusCode.Error, "Job failed with exception");
@@ -344,7 +351,7 @@ internal sealed class JobRunnerService : BackgroundService
    ///    <see cref="Activity.SetTag"/> does. The Job Parameters add one <c>job.parameters.&lt;property path&gt;</c> tag
    ///    per Logged Parameter, and no other tag.
    /// </summary>
-   private static ActivityTagsCollection GetJobSpanTags(JobStoreItem jobBusItem)
+   private static ActivityTagsCollection GetJobSpanTags(JobStoreItem jobBusItem, Dictionary<string, object?> loggedParameters)
    {
       var tags = new ActivityTagsCollection {
          ["job.type"] = jobBusItem.JobType.AssemblyQualifiedName,
@@ -354,7 +361,7 @@ internal sealed class JobRunnerService : BackgroundService
          ["job.attempt"] = jobBusItem.Attempt
       };
 
-      foreach (var (path, value) in LoggedParameters.ToFlatDictionary(jobBusItem.Parameters))
+      foreach (var (path, value) in LoggedParameters.ToFlatDictionary(loggedParameters))
          tags[$"job.parameters.{path}"] = value;
 
       return tags;
@@ -502,7 +509,7 @@ internal sealed class JobRunnerService : BackgroundService
                ex,
                "Error while storing the outcome of job {JobType} with parameters: {@Parameters} (attempt {Attempt}); trying again in {Wait}",
                job.JobType.Name,
-               LoggedParameters.ToDictionary(job.Parameters),
+               LoggedParameters.ToDictionary(job.Parameters, _logger),
                attempt,
                wait
             );

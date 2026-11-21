@@ -48,7 +48,7 @@ public abstract class JobSchedulerTests
          _harness.Clock.UtcNow = _clock.UtcNow;
 
          _jobStorage = _harness.Storage;
-         _scheduler = new JobScheduler(_services, _jobStorage, _clock);
+         _scheduler = new JobScheduler(_services, _jobStorage, _clock, new RecordingLogger<JobScheduler>());
       }
 
       public async ValueTask InitializeAsync()
@@ -66,7 +66,7 @@ public abstract class JobSchedulerTests
          // Arrange - two applications share the database; the other one schedules TestJob on Daily.
          var otherHarness = new PostgresStorageHarness(_fixture, "other-instance", "other-application");
          await otherHarness.Storage.InitializeAsync(CancellationToken);
-         var otherScheduler = new JobScheduler(_services, otherHarness.Storage, _clock);
+         var otherScheduler = new JobScheduler(_services, otherHarness.Storage, _clock, new RecordingLogger<JobScheduler>());
          await otherScheduler.PerformCronAsync<TestJob, TestJob.Parameters>(CronExpression.Daily, new TestJob.Parameters(), false, CancellationToken);
 
          // Act
@@ -149,7 +149,7 @@ public abstract class JobSchedulerTests
       public InMemoryJobSchedulerTests()
       {
          _jobStorage = new InMemoryJobStorage(_clock);
-         _scheduler = new JobScheduler(_services, _jobStorage, _clock);
+         _scheduler = new JobScheduler(_services, _jobStorage, _clock, new RecordingLogger<JobScheduler>());
       }
    }
 
